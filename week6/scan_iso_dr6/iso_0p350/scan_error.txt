@@ -1,0 +1,25 @@
+CMD:
+E:\Anaconda\python.exe C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\analysis_v9.py --data-dir C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\1k_ev --n-events 300 --out-dir C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_iso_dr6\iso_0p350 --iso-dr 0.35 --fast-scan --quiet --auc-max-fpr 1.0 --trk-pt-min 0.75
+
+STDOUT:
+
+
+STDERR:
+usage: analysis_v9.py [-h] [--data-dir DATA_DIR] [--n-events N_EVENTS]
+                      [--bins BINS] [--out-png OUT_PNG] [--out-csv OUT_CSV]
+                      [--out-dir OUT_DIR] [--include-converted]
+                      [--dr-overlap DR_OVERLAP] [--dr-track DR_TRACK]
+                      [--dr-track-keep DR_TRACK_KEEP]
+                      [--trk-pt-min TRK_PT_MIN]
+                      [--tracks-photons-png TRACKS_PHOTONS_PNG]
+                      [--tracks-jets-png TRACKS_JETS_PNG]
+                      [--tracks-out-csv TRACKS_OUT_CSV]
+                      [--mindr-before-png MINDR_BEFORE_PNG]
+                      [--mindr-after-png MINDR_AFTER_PNG]
+                      [--tracks-photons-split-png TRACKS_PHOTONS_SPLIT_PNG]
+                      [--iso-dr ISO_DR] [--iso-out-csv ISO_OUT_CSV]
+                      [--iso-photons-png ISO_PHOTONS_PNG]
+                      [--iso-jets-png ISO_JETS_PNG] [--roc-png ROC_PNG]
+                      [--roc-out-csv ROC_OUT_CSV] [--auc-max-fpr AUC_MAX_FPR]
+analysis_v9.py: error: unrecognized arguments: --fast-scan --quiet
+

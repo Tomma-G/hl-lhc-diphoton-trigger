@@ -1,0 +1,7 @@
+initial_data/
+*_outputs/
+__pycache__/
+*.csv
+*.png
+*.keras
+*.log
