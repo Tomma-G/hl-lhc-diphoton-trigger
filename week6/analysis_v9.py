@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-HL-LHC diphoton toy analysis.
+HL-LHC diphoton toy analysis (track-based isolation).
 
-Simplified diphoton analysis using per-event CSV inputs for photons, jets, tracks.
-Implements track-based isolation, jet–photon overlap removal, and basic performance metrics.
+This script performs a simplified diphoton analysis using per-event CSV inputs for photons,
+jets, and tracks. It implements:
+  - jet–photon overlap removal via a ΔR(jet, photon) cut
+  - track-count features around photons/jets within a configurable ΔR
+  - a simple track-isolation variable I = (Σ pT(tracks within ΔR)) / pT(object)
+  - basic performance metrics from the photon vs jet isolation distributions (ROC + AUC)
 
-Crucially:
-  - isolation and track-count features are computed using the full track collection
-    in the event (no photon-conditioned track filtering).
-  - any "tracks near photons" filtering is diagnostics only.
+Key analysis convention (important):
+  - all isolation and track-count features are computed using the full (post pT-cut) track
+    collection in the event (no photon-conditioned track filtering).
+  - any "tracks near photons" filtering is diagnostic only and is not used downstream.
 
 Per-event inputs (no headers):
   photons_<id>.csv : pT, eta, phi, e, conversionType
@@ -22,6 +26,12 @@ Outputs (written under --out-dir):
   - acceptance_vs_fake_rate_points.csv, roc.csv, acceptance_vs_fake_rate.png
   - min_dr_jet_photon_before.png, min_dr_jet_photon_after.png
   - track_reduction.csv, track_ptmin_reduction.csv
+  - ntracks_*.csv (track multiplicities inside iso cone vs total tracks)
+
+Notes:
+  - this is a toy/diagnostic analysis intended for fast iteration, not a full physics selection.
+  - jets CSVs may sometimes be corrupted/binary in the toy dataset; a heuristic guard is used.
+  - if --data-dir is a .tar.gz, it is extracted once into a cached folder alongside the tarball.
 """
 
 from __future__ import annotations
@@ -38,7 +48,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# --- Windows console robustness: force UTF-8 output ---
+# windows console robustness: try to force UTF-8 output (safe no-op on unsupported runtimes)
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -46,8 +56,10 @@ except Exception:
     pass
 
 
+# event discovery pattern: photons_<id>.csv defines the event list
 PHOTON_RE = re.compile(r"^photons_(\d+)\.csv$")
 
+# default configuration values (also exposed as CLI defaults)
 CFG: Dict[str, float] = {
     "dr_overlap_default": 0.20,
     "dr_track_default": 0.10,
@@ -57,6 +69,7 @@ CFG: Dict[str, float] = {
 
 
 def _safe_print(prefix: str, msg: str, *, stream=None) -> None:
+    # defensive printing: avoid unicode crashes on misconfigured terminals
     if stream is None:
         stream = sys.stdout
     try:
@@ -67,7 +80,7 @@ def _safe_print(prefix: str, msg: str, *, stream=None) -> None:
 
 
 def info(msg: str) -> None:
-    # intentionally minimal: only a few high-level lines in main()
+    # intentionally minimal: keep stdout readable for scans/batch running
     _safe_print("[info]", msg)
 
 
@@ -80,6 +93,7 @@ def err(msg: str) -> None:
 
 
 def write_roc_csv(out_dir, fpr, tpr, fname="roc.csv"):
+    """Write a simple two-column ROC CSV (fpr, tpr) to out_dir/fname."""
     import csv
 
     os.makedirs(out_dir, exist_ok=True)
@@ -93,6 +107,14 @@ def write_roc_csv(out_dir, fpr, tpr, fname="roc.csv"):
 
 
 def write_ntracks_csv(out_dir, n_iso, n_total, fname="ntracks.csv"):
+    """
+    Write track multiplicities inside the iso cone alongside total tracks.
+
+    Columns:
+      - ntracks_iso: tracks within ΔR < iso_dr (counted with the event's full track collection)
+      - ntracks_total: total tracks in event (after the pT cut)
+      - frac_kept: ntracks_iso / ntracks_total
+    """
     import csv
 
     os.makedirs(out_dir, exist_ok=True)
@@ -109,6 +131,7 @@ def write_ntracks_csv(out_dir, n_iso, n_total, fname="ntracks.csv"):
 
 
 def find_event_ids(data_dir: str) -> List[int]:
+    """Return sorted event IDs discovered from photons_<id>.csv in data_dir."""
     ids: List[int] = []
     for name in os.listdir(data_dir):
         m = PHOTON_RE.match(name)
@@ -131,17 +154,20 @@ def tracks_path(data_dir: str, event_id: int) -> str:
 
 
 def delta_phi(phi1: float, phi2: float) -> float:
+    """Compute Δφ wrapped into (-π, π]."""
     dphi = phi1 - phi2
     return float((dphi + np.pi) % (2.0 * np.pi) - np.pi)
 
 
 def delta_r(eta1: float, phi1: float, eta2: float, phi2: float) -> float:
+    """Compute ΔR = sqrt((Δη)^2 + (Δφ)^2)."""
     deta = eta1 - eta2
     dphi = delta_phi(phi1, phi2)
     return float(np.sqrt(deta * deta + dphi * dphi))
 
 
 def pxyz_from_ptetaphi(pt: float, eta: float, phi: float) -> Tuple[float, float, float]:
+    """Convert (pT, η, φ) to (px, py, pz)."""
     px = pt * np.cos(phi)
     py = pt * np.sin(phi)
     pz = pt * np.sinh(eta)
@@ -149,6 +175,7 @@ def pxyz_from_ptetaphi(pt: float, eta: float, phi: float) -> Tuple[float, float,
 
 
 def inv_mass_from_two_objects(obj1: Dict[str, float], obj2: Dict[str, float]) -> float:
+    """Invariant mass from two objects with keys pT, eta, phi, e."""
     px1, py1, pz1 = pxyz_from_ptetaphi(obj1["pT"], obj1["eta"], obj1["phi"])
     px2, py2, pz2 = pxyz_from_ptetaphi(obj2["pT"], obj2["eta"], obj2["phi"])
 
@@ -168,6 +195,7 @@ def _dr_mask_to_object(
     obj_phi: float,
     dr_max: float,
 ) -> np.ndarray:
+    """Vectorised ΔR mask selecting tracks within dr_max of a single object."""
     if trk_eta.size == 0:
         return np.zeros(0, dtype=bool)
     deta = trk_eta - float(obj_eta)
@@ -183,6 +211,7 @@ def count_tracks_near_object_fast(
     trk_phi: np.ndarray,
     dr_max: float,
 ) -> int:
+    """Count tracks within ΔR < dr_max of an object (vectorised)."""
     return int(np.count_nonzero(_dr_mask_to_object(trk_eta, trk_phi, obj_eta, obj_phi, dr_max)))
 
 
@@ -195,6 +224,11 @@ def track_iso_scalar_sum_pt_fast(
     trk_pt: np.ndarray,
     dr_max: float,
 ) -> float:
+    """
+    Track isolation: I = (Σ pT(tracks within ΔR < dr_max)) / pT(object).
+
+    Returns NaN if obj_pt <= 0. Uses all tracks (post pT cut) supplied in trk_* arrays.
+    """
     if obj_pt <= 0.0:
         return float("nan")
     if trk_eta.size == 0:
@@ -206,7 +240,7 @@ def track_iso_scalar_sum_pt_fast(
 
 
 def filter_tracks_close_to_photons(df_trk: pd.DataFrame, df_ph: pd.DataFrame, dr_keep: float) -> pd.DataFrame:
-    """Return tracks within dr_keep of any photon (diagnostic only)."""
+    """Return tracks within dr_keep of any photon (diagnostic only; not used in features)."""
     if len(df_trk) == 0 or len(df_ph) == 0:
         return df_trk
 
@@ -226,12 +260,20 @@ def filter_tracks_close_to_photons(df_trk: pd.DataFrame, df_ph: pd.DataFrame, dr
 
 
 def roc_from_iso(ph_iso: np.ndarray, jet_iso: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """ROC curve for isolation cut I < c. Returns (fpr, tpr) arrays."""
+    """
+    ROC curve for an isolation cut I < c.
+
+    Photon acceptance:  TPR(c) = P_photon(I < c)
+    Jet fake rate:      FPR(c) = P_jet(I < c)
+
+    Returns (fpr, tpr) arrays in non-decreasing fpr order.
+    """
     ph = ph_iso[np.isfinite(ph_iso)].astype(float)
     jt = jet_iso[np.isfinite(jet_iso)].astype(float)
     if ph.size == 0 or jt.size == 0:
         return np.array([]), np.array([])
 
+    # evaluate the cut at midpoints between unique observed values for stable step behaviour
     vals = np.unique(np.concatenate([ph, jt]))
     vals.sort()
     if vals.size == 1:
@@ -246,6 +288,7 @@ def roc_from_iso(ph_iso: np.ndarray, jet_iso: np.ndarray) -> Tuple[np.ndarray, n
     tpr_plot = np.array([float(np.mean(ph < c)) for c in cuts_plot], dtype=float)
     fpr_plot = np.array([float(np.mean(jt < c)) for c in cuts_plot], dtype=float)
 
+    # ensure fpr is sorted; then enforce monotonic tpr envelope at each unique fpr
     order = np.argsort(fpr_plot)
     f = fpr_plot[order]
     t = tpr_plot[order]
@@ -283,10 +326,12 @@ def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, *, max_fpr: float = 1.0) -> f
     if max_fpr <= 0.0:
         return 0.0
 
+    # anchor at (0,0) if needed (common for ROC integration)
     if f[0] > 0.0:
         f = np.concatenate(([0.0], f))
         t = np.concatenate(([0.0], t))
 
+    # clip/interpolate at max_fpr for partial AUC
     if f[-1] < max_fpr:
         f = np.concatenate((f, [max_fpr]))
         t = np.concatenate((t, [t[-1]]))
@@ -304,10 +349,15 @@ def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, *, max_fpr: float = 1.0) -> f
             f = np.concatenate((f[:first_above], [max_fpr]))
             t = np.concatenate((t[:first_above], [t_at]))
 
-    return float(np.trapz(t, f))
+    return float(np.trapezoid(t, f))
 
 
 def cut_at_fixed_tpr(ph_iso: np.ndarray, jt_iso: np.ndarray, target_tpr: float):
+    """
+    Find the isolation cut I < cut giving (approximately) the target TPR on photons.
+
+    Returns (cut, achieved_tpr, achieved_fpr). Uses photon iso values as candidate thresholds.
+    """
     ph = ph_iso[np.isfinite(ph_iso)]
     jt = jt_iso[np.isfinite(jt_iso)]
     if ph.size == 0 or jt.size == 0:
@@ -324,7 +374,12 @@ def cut_at_fixed_tpr(ph_iso: np.ndarray, jt_iso: np.ndarray, target_tpr: float):
 
 
 def best_threshold_separation(photon_counts: List[int], jet_counts: List[int]) -> Tuple[int, float, float, float]:
-    """Optimal track-count cut n_tracks ≤ t."""
+    """
+    Choose an integer track-count threshold for separating photons and jets.
+
+    Uses the rule "accept if n_tracks ≤ t" and selects t maximising a simple accuracy metric.
+    Returns (t, photon_eff, jet_misid, accuracy).
+    """
     if len(photon_counts) == 0 or len(jet_counts) == 0:
         return 0, float("nan"), float("nan"), float("nan")
 
@@ -345,7 +400,7 @@ def best_threshold_separation(photon_counts: List[int], jet_counts: List[int]) -
 
 
 def read_csv_maybe_gzip(path: str, **kwargs) -> pd.DataFrame:
-    """Read CSV; auto-detect gzip via magic bytes."""
+    """Read CSV and auto-detect gzip via magic bytes (0x1f, 0x8b)."""
     with open(path, "rb") as f:
         head = f.read(2)
     is_gz = (len(head) == 2 and head[0] == 0x1F and head[1] == 0x8B)
@@ -355,7 +410,11 @@ def read_csv_maybe_gzip(path: str, **kwargs) -> pd.DataFrame:
 
 
 def looks_like_text_file(path: str, *, nbytes: int = 4096) -> bool:
-    """Heuristic: return False if the file looks binary/corrupt."""
+    """
+    Heuristic guard for jets files that may be binary/corrupt in the toy dataset.
+
+    Returns False if the file contains NUL bytes or tar markers, or is empty/unreadable.
+    """
     try:
         with open(path, "rb") as f:
             buf = f.read(nbytes)
@@ -372,7 +431,7 @@ def looks_like_text_file(path: str, *, nbytes: int = 4096) -> bool:
 
 
 def coerce_numeric_df(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
-    """Force selected columns to numeric and drop rows that fail."""
+    """Force selected columns to numeric and drop rows that fail coercion."""
     if df.empty:
         return df
     out = df.copy()
@@ -384,8 +443,12 @@ def coerce_numeric_df(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
 
 def prepare_data_dir(path: str) -> str:
     """
-    If path is a directory: return it unchanged.
-    If path ends with .tar.gz: extract once to a cached folder and return that folder.
+    Normalise the dataset path.
+
+    Behaviour:
+      - if path is a directory: return it unchanged
+      - if path ends with .tar.gz: extract once to a cached folder and return that folder
+      - otherwise: return the absolute path unchanged (the caller will validate existence)
     """
     abs_path = os.path.abspath(path)
 
@@ -434,10 +497,12 @@ def main() -> None:
         help="include converted photons (default: exclude them)",
     )
 
+    # geometry / feature radii
     parser.add_argument("--dr-overlap", type=float, default=float(CFG["dr_overlap_default"]))
     parser.add_argument("--dr-track", type=float, default=float(CFG["dr_track_default"]))
     parser.add_argument("--dr-track-keep", type=float, default=float(CFG["dr_track_keep_default"]))
 
+    # track pT cut: applied before computing all track-based features and diagnostics
     parser.add_argument(
         "--trk-pt-min",
         type=float,
@@ -445,14 +510,17 @@ def main() -> None:
         help="only use tracks with pT > trk_pt_min for n_tracks + iso features",
     )
 
+    # track-count output products
     parser.add_argument("--tracks-photons-png", default="tracks_near_photons.png")
     parser.add_argument("--tracks-jets-png", default="tracks_near_jets.png")
     parser.add_argument("--tracks-out-csv", default="track_counts.csv")
 
+    # overlap-removal diagnostics
     parser.add_argument("--mindr-before-png", default="min_dr_jet_photon_before.png")
     parser.add_argument("--mindr-after-png", default="min_dr_jet_photon_after.png")
     parser.add_argument("--tracks-photons-split-png", default="tracks_near_photons_split_conversion.png")
 
+    # isolation + roc products
     parser.add_argument("--iso-dr", type=float, default=float(CFG["iso_dr_default"]))
     parser.add_argument("--iso-out-csv", default="iso_values.csv")
     parser.add_argument("--iso-photons-png", default="iso_photons.png")
@@ -481,7 +549,7 @@ def main() -> None:
     )
     os.makedirs(out_dir, exist_ok=True)
 
-    # minimal high-level logging only
+    # minimal high-level logging only (keeps scans readable)
     info(f"data: {args.data_dir}")
     info(f"out:  {out_dir}")
     info(
@@ -491,6 +559,7 @@ def main() -> None:
         f"converted={'incl' if not exclude_converted else 'excl'}"
     )
 
+    # resolve all output paths early to keep the analysis loop clean
     out_csv_path = os.path.join(out_dir, args.out_csv)
     out_png_path = os.path.join(out_dir, args.out_png)
 
@@ -520,6 +589,7 @@ def main() -> None:
 
     chosen = event_ids[: args.n_events]
 
+    # per-event/aggregate accumulators (kept explicit for clarity)
     mgg_rows: List[Dict[str, float]] = []
 
     n_read = 0
@@ -545,18 +615,21 @@ def main() -> None:
     photon_total_ntracks: List[int] = []
     jet_total_ntracks: List[int] = []
 
+    # dataset-level track bookkeeping (diagnostic)
     n_trk_all_total = 0
-    n_trk_phclose_total = 0  # diagnostic only
+    n_trk_phclose_total = 0  # diagnostic only (tracks within dr_track_keep of any photon)
 
     n_trk_before_pt_total = 0
     n_trk_after_pt_total = 0
 
+    # main event loop: keep all computation local and append only scalars/rows
     for ev in chosen:
         ph_path = photons_path(args.data_dir, ev)
         if not os.path.exists(ph_path) or os.path.getsize(ph_path) == 0:
             n_bad_ph += 1
             continue
 
+        # photons: strict numeric coercion for kinematic columns
         try:
             df_ph = pd.read_csv(
                 ph_path,
@@ -570,11 +643,12 @@ def main() -> None:
             n_bad_ph += 1
             continue
 
+        # optional removal of converted photons (conversionType != 0)
         if exclude_converted:
             conv_int = pd.to_numeric(df_ph["conversionType"], errors="coerce").fillna(-999).astype(int)
             df_ph = df_ph[conv_int == 0].reset_index(drop=True)
 
-        # ---- jets (robust) ----
+        # jets: guarded read because toy jets files may be corrupted/binary
         jet_p = jets_path(args.data_dir, ev)
         if os.path.exists(jet_p) and os.path.getsize(jet_p) > 0:
             if not looks_like_text_file(jet_p):
@@ -599,7 +673,7 @@ def main() -> None:
         else:
             df_j = pd.DataFrame(columns=["pT", "eta", "phi", "e"])
 
-        # ---- tracks ----
+        # tracks: read kinematics; z0/d0 retained in df but not used in current features
         trk_p = tracks_path(args.data_dir, ev)
         if os.path.exists(trk_p) and os.path.getsize(trk_p) > 0:
             try:
@@ -615,7 +689,7 @@ def main() -> None:
         else:
             df_trk_all = pd.DataFrame(columns=["pT", "eta", "phi", "eTot", "z0", "d0"])
 
-        # ---- track pT cut (applies to BOTH features and diagnostics) ----
+        # track pT cut (applies to BOTH feature computation and diagnostics in this script)
         n_trk_before_pt = int(len(df_trk_all))
         if args.trk_pt_min > 0.0 and n_trk_before_pt > 0:
             df_trk_all = df_trk_all[df_trk_all["pT"] > float(args.trk_pt_min)].reset_index(drop=True)
@@ -624,18 +698,19 @@ def main() -> None:
         n_trk_before_pt_total += n_trk_before_pt
         n_trk_after_pt_total += n_trk_after_pt
 
-        # diagnostic: how many tracks are near photons (do NOT use downstream)
+        # diagnostic: tracks near photons (not used in any downstream feature)
         n_trk_all_total += len(df_trk_all)
         df_trk_phclose = filter_tracks_close_to_photons(df_trk_all, df_ph, float(args.dr_track_keep))
         n_trk_phclose_total += len(df_trk_phclose)
 
+        # convert track columns to numpy once for fast vectorised ΔR operations
         trk_all_eta = df_trk_all["eta"].to_numpy(dtype=float) if len(df_trk_all) else np.zeros(0, dtype=float)
         trk_all_phi = df_trk_all["phi"].to_numpy(dtype=float) if len(df_trk_all) else np.zeros(0, dtype=float)
         trk_all_pt = df_trk_all["pT"].to_numpy(dtype=float) if len(df_trk_all) else np.zeros(0, dtype=float)
 
         n_jets_before += len(df_j)
 
-        # ---- jet–photon overlap removal ----
+        # jet–photon overlap removal: keep jets with min ΔR(jet, photon) >= dr_overlap
         kept: List[pd.Series] = []
         min_dr_before = np.inf
 
@@ -652,6 +727,7 @@ def main() -> None:
         if np.isfinite(min_dr_before):
             min_dr_before_per_event.append(float(min_dr_before))
 
+        # after-removal diagnostic: min ΔR between kept jets and photons
         if len(kept) > 0 and len(df_ph) > 0:
             min_dr_after = np.inf
             for jet in kept:
@@ -663,7 +739,7 @@ def main() -> None:
 
         n_jets_after += len(kept)
 
-        # ---- photons: features use ALL tracks ----
+        # photons: compute features using ALL tracks (post pT cut), no conditioning on photons
         for i, pho in df_ph.iterrows():
             pho_eta = float(pho["eta"])
             pho_phi = float(pho["phi"])
@@ -674,6 +750,7 @@ def main() -> None:
                 pho_eta, pho_phi, pho_pt, trk_all_eta, trk_all_phi, trk_all_pt, args.iso_dr
             )
 
+            # auxiliary track multiplicities for the iso cone
             ntrk_iso = count_tracks_near_object_fast(pho_eta, pho_phi, trk_all_eta, trk_all_phi, args.iso_dr)
             photon_total_ntracks.append(int(len(trk_all_pt)))
             photon_iso_ntracks.append(ntrk_iso)
@@ -705,7 +782,7 @@ def main() -> None:
                 }
             )
 
-        # ---- jets: features use ALL tracks ----
+        # jets (after overlap removal): compute features using ALL tracks (post pT cut)
         for i, jet in enumerate(kept):
             jet_eta = float(jet["eta"])
             jet_phi = float(jet["phi"])
@@ -744,6 +821,7 @@ def main() -> None:
                 }
             )
 
+        # invariant mass: only for events with exactly two photons (after conversion filtering)
         if len(df_ph) != 2:
             continue
 
@@ -762,8 +840,7 @@ def main() -> None:
         }
         mgg_rows.append({"event_id": ev, "m_gg": inv_mass_from_two_objects(pho1, pho2)})
 
-    # ---- write outputs (no per-file "wrote ..." prints) ----
-
+    # write outputs (keep stdout clean; scanners often parse logs)
     if n_trk_all_total > 0:
         frac = float(n_trk_phclose_total) / float(n_trk_all_total)
         pd.DataFrame(
@@ -799,6 +876,7 @@ def main() -> None:
         out_dir, photon_iso_ntracks + jet_iso_ntracks, photon_total_ntracks + jet_total_ntracks, fname="ntracks.csv"
     )
 
+    # roc + auc computed from photon vs jet isolation distributions
     ph_iso = np.array(photon_iso_vals, dtype=float)
     jt_iso = np.array(jet_iso_vals, dtype=float)
     fpr, tpr = roc_from_iso(ph_iso, jt_iso)
@@ -820,6 +898,7 @@ def main() -> None:
     out = pd.DataFrame(mgg_rows)
     out.to_csv(out_csv_path, index=False)
 
+    # mgg histogram (events with exactly 2 photons)
     plt.figure()
     plt.hist(out["m_gg"].to_numpy(dtype=float), bins=args.bins)
     plt.xlabel(r"$m_{\gamma\gamma}$ [GeV]")
@@ -828,6 +907,7 @@ def main() -> None:
     plt.tight_layout()
     plt.savefig(out_png_path, dpi=200)
 
+    # overlap-removal diagnostics: min ΔR(jet, photon) distributions
     if len(min_dr_before_per_event) > 0:
         arr = np.array(min_dr_before_per_event, dtype=float)
         plt.figure()
@@ -848,6 +928,7 @@ def main() -> None:
         plt.tight_layout()
         plt.savefig(mindr_after_png_path, dpi=200)
 
+    # track-count products (photon/jets)
     track_df = pd.DataFrame(track_rows)
     track_df.to_csv(tracks_out_csv_path, index=False)
 
@@ -869,6 +950,7 @@ def main() -> None:
         plt.tight_layout()
         plt.savefig(tracks_jets_png_path, dpi=200)
 
+    # isolation distributions
     if np.any(np.isfinite(ph_iso)):
         vals = ph_iso[np.isfinite(ph_iso)]
         plt.figure()
@@ -888,6 +970,7 @@ def main() -> None:
         plt.tight_layout()
         plt.savefig(iso_jets_png_path, dpi=200)
 
+    # acceptance vs fake-rate curve (ROC)
     if len(fpr) > 0:
         plt.figure()
         plt.plot(fpr, tpr)
@@ -897,7 +980,7 @@ def main() -> None:
         plt.tight_layout()
         plt.savefig(roc_png_path, dpi=200)
 
-    # final compact summary (single block)
+    # final compact summary (single line block for scan logs)
     kept_frac_diag = (float(n_trk_phclose_total) / float(n_trk_all_total)) if n_trk_all_total > 0 else float("nan")
     info(
         "summary: "

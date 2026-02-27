@@ -1,27 +1,34 @@
 #!/usr/bin/env python3
 """
-Simple scan over --trk-pt-min for your analysis script.
+Scan over --trk-pt-min for the analysis script.
 
-What it does:
-- runs your analysis script repeatedly with different --trk-pt-min values
-- reads each run's outputs to summarise performance:
-    * AUC from roc.csv (optionally partial AUC via --auc-max-fpr passed through)
-    * fake@99 from acceptance_vs_fake_rate_points.csv (if present) OR approximated from roc.csv
-    * track kept fraction from track_ptmin_reduction.csv
-- writes a summary CSV + prints a compact table
+For each chosen track pT threshold (trk_pt_min), this script:
+  - runs the analysis script once
+  - reads the run outputs and extracts summary metrics
+  - saves per-point and overlaid ROC plots
+  - writes a single summary CSV and prints a compact ranking table
 
-Usage (examples):
-  python scan_ptmin.py --analysis-script analysis_v8.py --data-dir "C:/.../1k_ev" --n-events 300
+Metrics extracted per run:
+  - AUC from roc.csv (optionally partial AUC using --auc-max-fpr)
+  - fake@target_tpr from acceptance_vs_fake_rate_points.csv if present,
+    otherwise estimated from roc.csv
+  - track kept fraction from track_ptmin_reduction.csv
 
-  python scan_ptmin.py --analysis-script analysis_v8.py --data-dir "C:/.../1k_ev" \
+Expected analysis outputs in each run directory:
+  - roc.csv
+  - track_ptmin_reduction.csv
+Optional (preferred for fake@target_tpr):
+  - acceptance_vs_fake_rate_points.csv
+
+Usage examples:
+  python scan_ptmin.py --analysis-script analysis_v9.py --data-dir "C:/.../1k_ev" --n-events 300
+
+  python scan_ptmin.py --analysis-script analysis_v9.py --data-dir "C:/.../1k_ev" \
       --n-events 300 --ptmin 0.5 0.75 1.0 1.25 1.5 --auc-max-fpr 0.2
 
 Notes:
-- This assumes your analysis script writes (in out-dir):
-    roc.csv
-    track_ptmin_reduction.csv
-    and ideally acceptance_vs_fake_rate_points.csv (your script currently writes it in fast-scan too).
-- If acceptance_vs_fake_rate_points.csv is not produced, fake@99 is estimated from roc.csv.
+  - If acceptance_vs_fake_rate_points.csv is not produced, fake@target_tpr is estimated
+    conservatively from roc.csv (first FPR where TPR >= target).
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ import matplotlib.pyplot as plt
 
 
 def read_roc_csv(path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Read roc.csv with columns (fpr, tpr) and return arrays sorted by fpr."""
     fpr: List[float] = []
     tpr: List[float] = []
     with open(path, "r", encoding="utf-8") as f:
@@ -57,6 +65,12 @@ def read_roc_csv(path: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, max_fpr: float = 1.0) -> float:
+    """
+    Compute (partial) AUC = ∫ TPR d(FPR) over FPR in [0, max_fpr].
+
+    The curve is anchored at (0,0) if needed and clipped/interpolated at max_fpr
+    for partial AUC.
+    """
     if fpr.size == 0 or tpr.size == 0:
         return float("nan")
 
@@ -73,7 +87,7 @@ def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, max_fpr: float = 1.0) -> floa
     if max_fpr <= 0.0:
         return 0.0
 
-    # ensure starting at (0,0)
+    # ensure starting at (0,0) for integration
     if f[0] > 0.0:
         f = np.concatenate(([0.0], f))
         t = np.concatenate(([0.0], t))
@@ -96,13 +110,13 @@ def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, max_fpr: float = 1.0) -> floa
             f = np.concatenate((f[:i], [max_fpr]))
             t = np.concatenate((t[:i], [t_at]))
 
-    return float(np.trapz(t, f))
+    return float(np.trapezoid(t, f))
 
 
 def estimate_fake_at_tpr(fpr: np.ndarray, tpr: np.ndarray, target_tpr: float = 0.99) -> float:
     """
-    Conservative estimate: for the first point where TPR >= target, take that FPR.
-    If never reaches target, return nan.
+    Conservative estimate: take the first FPR where TPR >= target_tpr.
+    If the target TPR is never reached, returns NaN.
     """
     if fpr.size == 0 or tpr.size == 0:
         return float("nan")
@@ -120,6 +134,7 @@ def estimate_fake_at_tpr(fpr: np.ndarray, tpr: np.ndarray, target_tpr: float = 0
 
 
 def read_track_ptmin_reduction(path: str) -> Dict[str, float]:
+    """Read track_ptmin_reduction.csv and coerce numeric fields to floats."""
     with open(path, "r", encoding="utf-8") as f:
         r = csv.DictReader(f)
         row = next(r, None)
@@ -133,7 +148,9 @@ def read_track_ptmin_reduction(path: str) -> Dict[str, float]:
             pass
     return out
 
+
 def plot_roc(fpr: np.ndarray, tpr: np.ndarray, title: str, out_png: str) -> None:
+    """Plot a single ROC curve (acceptance vs fake rate)."""
     plt.figure()
     plt.plot(fpr, tpr)
     plt.xlabel("Fake rate (jets passing cut)")
@@ -143,11 +160,17 @@ def plot_roc(fpr: np.ndarray, tpr: np.ndarray, title: str, out_png: str) -> None
     plt.savefig(out_png, dpi=200)
     plt.close()
 
+
 def read_points_fake99(path: str) -> Optional[float]:
     """
-    Try to read fake@0.99 from acceptance_vs_fake_rate_points.csv if present.
+    Read fake@0.99 from acceptance_vs_fake_rate_points.csv if present.
 
-    We support a few possible column name conventions.
+    Supported formats:
+      - columns: target_tpr, fpr (use the row with target_tpr closest to 0.99)
+      - columns: tpr, fpr (use the first row where tpr >= 0.99)
+
+    Returns:
+      fpr value if available, otherwise None.
     """
     with open(path, "r", encoding="utf-8") as f:
         r = csv.DictReader(f)
@@ -155,9 +178,6 @@ def read_points_fake99(path: str) -> Optional[float]:
     if not rows:
         return None
 
-    # Common possibilities:
-    # - columns: target_tpr, cut, tpr, fpr
-    # - or: tpr, fpr
     keys = rows[0].keys()
 
     def fget(row, name):
@@ -167,7 +187,6 @@ def read_points_fake99(path: str) -> Optional[float]:
             return None
 
     if "target_tpr" in keys and "fpr" in keys:
-        # choose row with target_tpr closest to 0.99
         best = None
         for row in rows:
             tt = fget(row, "target_tpr")
@@ -179,7 +198,6 @@ def read_points_fake99(path: str) -> Optional[float]:
                 best = (d, fp)
         return best[1] if best else None
 
-    # otherwise: pick first row where tpr >= 0.99
     if "tpr" in keys and "fpr" in keys:
         for row in rows:
             tt = fget(row, "tpr")
@@ -201,6 +219,11 @@ def run_one(
     ptmin: float,
     pass_args: List[str],
 ) -> Tuple[int, str]:
+    """
+    Run the analysis script once at a fixed trk_pt_min and return (returncode, out_dir).
+
+    On failure, stdout/stderr and the command are written to scan_error.txt in the run folder.
+    """
     out_dir = os.path.join(out_root, f"ptmin_{ptmin:.3f}".replace(".", "p"))
     os.makedirs(out_dir, exist_ok=True)
 
@@ -219,7 +242,6 @@ def run_one(
 
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if p.returncode != 0:
-        # keep stderr for debugging in the summary
         err_path = os.path.join(out_dir, "scan_error.txt")
         with open(err_path, "w", encoding="utf-8") as f:
             f.write("CMD:\n" + " ".join(cmd) + "\n\nSTDOUT:\n" + p.stdout + "\n\nSTDERR:\n" + p.stderr + "\n")
@@ -229,9 +251,9 @@ def run_one(
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
-    "--analysis-script",
-    default="C:/Users/Tom Greenwood/Desktop/University/Year 4/SEM 2/SH Project/week6/analysis_v9.py",
-    help="path to your analysis script (default points to your local analysis_v8.py).",
+        "--analysis-script",
+        default="C:/Users/Tom Greenwood/Desktop/University/Year 4/SEM 2/SH Project/week6/analysis_v9.py",
+        help="path to the analysis script",
     )
     ap.add_argument(
         "--data-dir",
@@ -248,7 +270,7 @@ def main() -> None:
         type=float,
         nargs="*",
         default=None,
-        help="explicit ptmin values in GeV. If omitted, uses a default grid up to 0.75 GeV.",
+        help="explicit ptmin values in GeV. If omitted, uses a default grid.",
     )
 
     ap.add_argument(
@@ -261,7 +283,7 @@ def main() -> None:
         "--target-tpr",
         type=float,
         default=0.99,
-        help="for fake@target_tpr. Default 0.99.",
+        help="for fake@target_tpr",
     )
     args = ap.parse_args()
 
@@ -280,10 +302,12 @@ def main() -> None:
         else [0.50, 0.55, 0.60, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20]
     )
 
+    # arguments passed through to each analysis run
     pass_args = ["--auc-max-fpr", str(float(args.auc_max_fpr))]
-    
+
     rows: List[Dict[str, object]] = []
     roc_curves: List[Tuple[float, np.ndarray, np.ndarray]] = []
+
     for ptmin in ptmins:
         rc, out_dir = run_one(
             analysis_script=analysis_script,
@@ -303,31 +327,32 @@ def main() -> None:
         roc_path = os.path.join(out_dir, "roc.csv")
         ptred_path = os.path.join(out_dir, "track_ptmin_reduction.csv")
         points_path = os.path.join(out_dir, "acceptance_vs_fake_rate_points.csv")
-        
+
         if os.path.exists(roc_path):
             fpr, tpr = read_roc_csv(roc_path)
-
             roc_curves.append((float(ptmin), fpr, tpr))
 
-            # per-pt ROC plot
+            # per-point ROC plot
             plot_roc(
                 fpr,
                 tpr,
                 title=f"Acceptance vs Fake rate (iso), ptmin={ptmin:.2f} GeV",
                 out_png=os.path.join(out_dir, "roc_ptmin.png"),
             )
+
             row["auc"] = auc_from_roc(fpr, tpr, max_fpr=float(args.auc_max_fpr))
             row["fake_at_target_tpr"] = estimate_fake_at_tpr(fpr, tpr, target_tpr=float(args.target_tpr))
         else:
             row["auc"] = float("nan")
             row["fake_at_target_tpr"] = float("nan")
 
-        # if points file exists, prefer that for fake@target_tpr
+        # if points file exists, prefer that value for fake@target_tpr
         if os.path.exists(points_path):
             fp = read_points_fake99(points_path)
             if fp is not None:
                 row["fake_at_target_tpr"] = float(fp)
 
+        # track reduction summary from the analysis output
         if os.path.exists(ptred_path):
             d = read_track_ptmin_reduction(ptred_path)
             for k in ["tracks_before_pt", "tracks_after_pt", "kept_fraction_pt"]:
@@ -336,7 +361,7 @@ def main() -> None:
 
         rows.append(row)
 
-    # ROC overlay plot
+    # ROC overlay plot across all ptmin values
     if roc_curves:
         plt.figure()
         for pt, fpr, tpr in sorted(roc_curves, key=lambda x: x[0]):
@@ -388,9 +413,7 @@ def main() -> None:
         fake = r.get("fake_at_target_tpr", float("nan"))
         kf = r.get("kept_fraction_pt", float("nan"))
         rc = r.get("returncode", -1)
-        print(
-            f"{pt:6.2f}  {auc:10.6f}  {fake:10.6f}  {kf:10.4f}  {int(rc):3d}"
-        )
+        print(f"{pt:6.2f}  {auc:10.6f}  {fake:10.6f}  {kf:10.4f}  {int(rc):3d}")
 
     print(f"\nwrote: {summary_path}")
 

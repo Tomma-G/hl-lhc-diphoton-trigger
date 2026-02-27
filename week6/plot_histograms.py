@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """
-Plot Liza's histogram CSVs.
+Histogram plotting utility.
 
-Supports:
-1) Normal CSV histograms:
-   - 1D edges: bin_low, bin_high, count/value
-   - 1D centres: bin_center, count/value
-   - binned XY: x_low, x_high, y (+ optional yerr)
+This script reads histogram-style CSV files (or ROOT TH1.Print() dumps)
+and produces PNG plots.
 
-2) ROOT TH1.Print() dumps saved as a .csv/.txt-like file:
+Supported input formats:
+
+1) Standard CSV histograms
+   - 1D with bin edges:
+       bin_low, bin_high, count/value
+   - 1D with bin centres:
+       bin_center, count/value
+   - Binned XY ("vs" plots):
+       x_low, x_high, y (+ optional yerr)
+
+2) ROOT TH1.Print() dumps saved as text/CSV-like files:
    TH1.Print Name  = ..., Entries= ...
     fSumw[0]=..., x=..., error=...
     ...
@@ -18,6 +25,11 @@ Outputs:
 
 Usage:
   python plot_histograms.py --in-dir path/to/csvs --out-dir plots
+
+Notes:
+  - Column name matching is case-insensitive.
+  - Empty bins (y <= 0) are excluded when parsing ROOT dumps.
+  - Files are located recursively under --in-dir.
 """
 
 import argparse
@@ -30,7 +42,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-# ---- configure expected filenames here (edit if yours differ) ----
+# ----------------------------------------------------------------------
+# Expected input filenames (edit if filenames differ).
+# Keys define internal plot names; values are filenames searched
+# recursively under --in-dir.
+# ----------------------------------------------------------------------
 FILES: Dict[str, str] = {
     "num_offl_all": "num_offl_all.csv",
     "num_offl_selected": "num_offl_selected.csv",
@@ -41,7 +57,9 @@ FILES: Dict[str, str] = {
     "resolution_d0_vs_truth_eta": "resolution_d0_vs_truth_eta.csv",
 }
 
-# ---- plot labels (edit as needed) ----
+# ----------------------------------------------------------------------
+# Plot labels (modify as required for presentation or publication).
+# ----------------------------------------------------------------------
 TITLES = {
     "num_offl_all": "Track multiplicity: all offline tracks",
     "num_offl_selected": "Track multiplicity: offline selected tracks",
@@ -74,6 +92,10 @@ YLABELS = {
 
 
 def _find_col(df: pd.DataFrame, candidates) -> Optional[str]:
+    """
+    Return the first matching column name (case-insensitive)
+    from a list of candidate names.
+    """
     cols = {c.lower(): c for c in df.columns}
     for cand in candidates:
         if cand.lower() in cols:
@@ -82,6 +104,10 @@ def _find_col(df: pd.DataFrame, candidates) -> Optional[str]:
 
 
 def is_root_th1_print_file(path: str) -> bool:
+    """
+    Determine whether a file appears to be a ROOT TH1.Print() dump
+    based on its first line.
+    """
     try:
         with open(path, "r", encoding="utf-8") as f:
             first = f.readline().strip()
@@ -92,15 +118,15 @@ def is_root_th1_print_file(path: str) -> bool:
 
 def read_root_th1_print(path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
     """
-    Parse ROOT TH1.Print() style dump:
-      TH1.Print Name  = ..., Entries= ...
-       fSumw[0]=..., x=..., error=...
+    Parse a ROOT TH1.Print() style dump.
 
-    Returns:
-      x (bin centres), y (bin contents), e (errors or None)
+    Extracted quantities:
+      - x : bin centres
+      - y : bin contents (fSumw)
+      - e : bin errors (if present)
 
-    Notes:
-      - drops empty bins by requiring y>0
+    Empty bins (y <= 0) are excluded.
+    Output is sorted by increasing x.
     """
     xs = []
     ys = []
@@ -126,7 +152,6 @@ def read_root_th1_print(path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.
             if not np.isfinite(xval) or not np.isfinite(yval):
                 continue
 
-            # drop empty bins
             if yval <= 0.0:
                 continue
 
@@ -157,11 +182,13 @@ def read_root_th1_print(path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.
 
 def read_1d_hist(path: str) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Returns (x, y) where x is bin centres and y is counts/values.
-    Supports:
-      - Normal CSV edges: (bin_low, bin_high, count/value)
-      - Normal CSV centres: (bin_center, count/value)
-      - ROOT TH1.Print dump
+    Read a 1D histogram file.
+
+    Returns:
+      x : bin centres
+      y : bin contents
+
+    Supports standard CSV formats and ROOT TH1.Print dumps.
     """
     if is_root_th1_print_file(path):
         x, y, _ = read_root_th1_print(path)
@@ -191,11 +218,12 @@ def read_1d_hist(path: str) -> Tuple[np.ndarray, np.ndarray]:
 
 def read_binned_xy(path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
     """
-    For 'vs' plots: returns (x_center, y, yerr or None).
-    Supports:
-      - Normal CSV: x_low, x_high, y (+ optional yerr)
-      - Normal CSV: x, y (+ optional yerr)
-      - ROOT TH1.Print dump (x, fSumw, error)
+    Read a binned XY histogram (e.g. resolution vs variable).
+
+    Returns:
+      x : bin centres
+      y : values
+      e : optional uncertainties (or None)
     """
     if is_root_th1_print_file(path):
         return read_root_th1_print(path)
@@ -226,6 +254,7 @@ def read_binned_xy(path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarr
 
 
 def plot_1d(x: np.ndarray, y: np.ndarray, title: str, xlabel: str, ylabel: str, out_png: str) -> None:
+    """Produce a step-style 1D histogram plot."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     m = np.isfinite(x) & np.isfinite(y)
@@ -243,6 +272,7 @@ def plot_1d(x: np.ndarray, y: np.ndarray, title: str, xlabel: str, ylabel: str, 
 
 
 def plot_xy(x: np.ndarray, y: np.ndarray, e: Optional[np.ndarray], title: str, xlabel: str, ylabel: str, out_png: str) -> None:
+    """Produce a binned XY plot with optional error bars."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
 
@@ -259,11 +289,11 @@ def plot_xy(x: np.ndarray, y: np.ndarray, e: Optional[np.ndarray], title: str, x
         plt.errorbar(x, y, yerr=e, fmt="o", capsize=2)
     else:
         plt.plot(x, y, marker="o")
+
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
 
-    # warn if very sparse (useful for avgNum_vs_mu)
     if x.size > 0 and x.size <= 6:
         plt.suptitle("NOTE: only a few populated bins in this file", y=0.98, fontsize=9)
 
@@ -273,6 +303,7 @@ def plot_xy(x: np.ndarray, y: np.ndarray, e: Optional[np.ndarray], title: str, x
 
 
 def main() -> None:
+    """Locate input files and generate PNG plots."""
     ap = argparse.ArgumentParser()
 
     ap.add_argument(

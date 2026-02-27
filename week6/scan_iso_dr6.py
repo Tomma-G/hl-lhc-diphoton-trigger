@@ -2,36 +2,35 @@
 """
 iso_dr scan with performance-vs-cost diagnostics.
 
-What it does (on top of a simple iso_dr scan):
-1) saves a per-iso_dr ROC plot (acceptance vs fake rate) into each run folder.
-2) saves one overlaid ROC plot with all iso_dr curves together (into out_root).
-3) produces “cost proxy” summaries vs iso_dr using the ntracks_*.csv outputs:
-   - mean ntracks_iso (tracks inside the iso cone) for photons, jets, and combined
-   - mean frac_kept = ntracks_iso / ntracks_total (mean of per-object ratios)
-   - global frac_kept = (sum ntracks_iso) / (sum ntracks_total) (preferred “fraction kept”)
+This script runs the analysis once per iso_dr value and summarises:
+  - performance from the ROC curve (AUC and fake rate at a fixed target TPR)
+  - a simple compute/IO cost proxy from track-occupancy-in-cone summaries
 
-Why the cost proxy is sensible:
-- if later you only keep / process tracks inside the cone (or compute per-track features inside
-  the cone), then ntracks_iso is directly proportional to downstream compute/IO.
-- even if you still iterate over all tracks to *find* cone tracks, cone occupancy is still a
-  meaningful “how many tracks survive” measure to discuss.
+For each iso_dr point it:
+  1) runs the analysis script, writing outputs into a dedicated run folder
+  2) makes a per-run ROC plot (acceptance vs fake rate)
+  3) records performance metrics from roc.csv (and optionally a points file)
+  4) reads ntracks_*.csv files to estimate "tracks-in-cone" occupancy statistics
 
-Requirements (analysis script outputs, written into --out-dir for each run):
-  roc.csv
-  ntracks_photons.csv
-  ntracks_jets.csv
-  ntracks.csv
-Optional:
-  acceptance_vs_fake_rate_points.csv (used to refine fake@target_tpr if present)
+Why the cost proxy is useful:
+  - if downstream processing is limited to tracks inside the iso cone, then the number of
+    tracks inside the cone is directly proportional to compute and IO.
+  - even when iterating over all tracks, cone occupancy is still a meaningful measure
+    of how much activity survives the isolation requirement.
 
-Notes:
-- this scan script does not rely on any special “fast-scan” or “quiet” flags; it simply runs the
-  analysis script once per iso_dr value and reads the CSV outputs listed above.
+Required analysis outputs per run (in --out-dir):
+  - roc.csv
+  - ntracks_photons.csv
+  - ntracks_jets.csv
+  - ntracks.csv
+Optional (used to refine fake@target_tpr if present):
+  - acceptance_vs_fake_rate_points.csv
 
-Default grid: iso_dr = 0.05..0.50 step 0.05
-Default analysis script path: set below.
+Defaults:
+  - iso_dr grid: 0.05..0.50 in steps of 0.05
+  - analysis script path: set via --analysis-script
 
-Usage:
+Usage examples:
   python scan_iso_dr_cost.py
   python scan_iso_dr_cost.py --n-events 300 --trk-pt-min 0.75
   python scan_iso_dr_cost.py --auc-max-fpr 0.2
@@ -51,6 +50,7 @@ import matplotlib.pyplot as plt
 
 
 def read_roc_csv(path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Read roc.csv with columns (fpr, tpr) and return arrays sorted by fpr."""
     fpr: List[float] = []
     tpr: List[float] = []
     with open(path, "r", encoding="utf-8") as f:
@@ -70,6 +70,12 @@ def read_roc_csv(path: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, max_fpr: float = 1.0) -> float:
+    """
+    Compute (partial) AUC = ∫ TPR d(FPR) over FPR in [0, max_fpr].
+
+    The input arrays are filtered to finite values. The curve is anchored at (0,0)
+    if needed and is clipped/interpolated at max_fpr for partial AUC.
+    """
     if fpr.size == 0 or tpr.size == 0:
         return float("nan")
 
@@ -86,12 +92,12 @@ def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, max_fpr: float = 1.0) -> floa
     if max_fpr <= 0.0:
         return 0.0
 
-    # ensure start at (0,0)
+    # ensure the curve starts at (0,0) for integration
     if f[0] > 0.0:
         f = np.concatenate(([0.0], f))
         t = np.concatenate(([0.0], t))
 
-    # clip/extend to max_fpr
+    # clip/extend to max_fpr for partial integration
     if f[-1] < max_fpr:
         f = np.concatenate((f, [max_fpr]))
         t = np.concatenate((t, [t[-1]]))
@@ -109,11 +115,16 @@ def auc_from_roc(fpr: np.ndarray, tpr: np.ndarray, max_fpr: float = 1.0) -> floa
             f = np.concatenate((f[:i], [max_fpr]))
             t = np.concatenate((t[:i], [t_at]))
 
-    return float(np.trapz(t, f))
+    return float(np.trapezoid(t, f))
 
 
 def estimate_fake_at_tpr(fpr: np.ndarray, tpr: np.ndarray, target_tpr: float = 0.99) -> float:
-    # conservative estimate: first FPR where TPR >= target.
+    """
+    Conservative fake-rate estimate at fixed acceptance:
+      fake@target_tpr = first FPR where TPR >= target_tpr
+
+    If the target TPR is never reached, returns NaN.
+    """
     if fpr.size == 0 or tpr.size == 0:
         return float("nan")
     t = np.asarray(tpr, dtype=float)
@@ -131,10 +142,14 @@ def estimate_fake_at_tpr(fpr: np.ndarray, tpr: np.ndarray, target_tpr: float = 0
 
 def read_points_fake(path: str, target_tpr: float) -> Optional[float]:
     """
-    Try to read fake@target_tpr from acceptance_vs_fake_rate_points.csv if present.
-    Supports:
-      - columns: target_tpr, fpr
-      - columns: tpr, fpr (first row where tpr >= target_tpr)
+    Try to read fake@target_tpr from acceptance_vs_fake_rate_points.csv.
+
+    Supported formats:
+      - columns: target_tpr, fpr (choose the closest target_tpr row)
+      - columns: tpr, fpr (choose the first row where tpr >= target_tpr)
+
+    Returns:
+      fake rate (float) if available, otherwise None.
     """
     with open(path, "r", encoding="utf-8") as f:
         r = csv.DictReader(f)
@@ -177,14 +192,18 @@ def read_points_fake(path: str, target_tpr: float) -> Optional[float]:
 
 def read_ntracks_csv(path: str) -> Dict[str, float]:
     """
-    Reads ntracks_*.csv written by write_ntracks_csv:
-      ntracks_iso, ntracks_total, frac_kept (one row per object)
+    Read ntracks_*.csv (one row per object).
 
-    Returns:
-      - mean/median/p90 of ntracks_iso (cost proxies)
+    Expected columns:
+      ntracks_iso, ntracks_total, frac_kept
+
+    Derived summaries:
+      - mean/median/p90 of ntracks_iso (tracks inside the iso cone)
       - mean/median of frac_kept (mean of per-object ratios)
-      - global_frac_kept = sum(ntracks_iso)/sum(ntracks_total) (preferred “fraction kept”)
-      - sums (sometimes useful for sanity checks)
+      - global_frac_kept = sum(ntracks_iso)/sum(ntracks_total) (preferred normalisation)
+      - sums and mean total tracks (useful for sanity checks)
+
+    Returns an empty dict if the file contains no valid rows.
     """
     iso: List[int] = []
     tot: List[int] = []
@@ -227,6 +246,7 @@ def read_ntracks_csv(path: str) -> Dict[str, float]:
 
 
 def default_iso_grid() -> List[float]:
+    """Default scan grid: iso_dr = 0.05..0.50 in steps of 0.05."""
     return [round(x, 2) for x in np.arange(0.05, 0.50 + 1e-9, 0.05).tolist()]
 
 
@@ -238,6 +258,11 @@ def run_one(
     iso_dr: float,
     pass_args: List[str],
 ) -> Tuple[int, str]:
+    """
+    Run the analysis script once at a fixed iso_dr and return (returncode, out_dir).
+
+    On failure, stdout/stderr and the command are written to scan_error.txt in the run folder.
+    """
     out_dir = os.path.join(out_root, f"iso_{iso_dr:.3f}".replace(".", "p"))
     os.makedirs(out_dir, exist_ok=True)
 
@@ -265,6 +290,7 @@ def run_one(
 
 
 def plot_roc(fpr: np.ndarray, tpr: np.ndarray, title: str, out_png: str, x_max: float = 1.0) -> None:
+    """Plot a single ROC curve (acceptance vs fake rate)."""
     plt.figure()
     plt.plot(fpr, tpr, label=None)
     plt.xlabel("Fake rate (jets passing cut)")
@@ -282,7 +308,7 @@ def main() -> None:
     ap.add_argument(
         "--analysis-script",
         default="C:/Users/Tom Greenwood/Desktop/University/Year 4/SEM 2/SH Project/week6/analysis_v9.py",
-        help="path to your analysis script.",
+        help="path to the analysis script",
     )
     ap.add_argument(
         "--data-dir",
@@ -311,13 +337,13 @@ def main() -> None:
         "--target-tpr",
         type=float,
         default=0.99,
-        help="for fake@target_tpr. Default 0.99.",
+        help="for fake@target_tpr",
     )
     ap.add_argument(
         "--trk-pt-min",
         type=float,
         default=0.75,
-        help="optional: pass a fixed track pT min to every run (recommended if you chose 0.75 etc).",
+        help="optional: pass a fixed track pT min to every run",
     )
     args = ap.parse_args()
 
@@ -330,6 +356,7 @@ def main() -> None:
 
     iso_vals = args.iso_dr if (args.iso_dr is not None and len(args.iso_dr) > 0) else default_iso_grid()
 
+    # arguments passed through to each analysis run
     pass_args = ["--auc-max-fpr", str(float(args.auc_max_fpr))]
     if args.trk_pt_min is not None:
         pass_args += ["--trk-pt-min", str(float(args.trk_pt_min))]
@@ -356,23 +383,24 @@ def main() -> None:
         roc_path = os.path.join(out_dir, "roc.csv")
         points_path = os.path.join(out_dir, "acceptance_vs_fake_rate_points.csv")
 
-        # cost proxy files
+        # cost proxy inputs
         nph_path = os.path.join(out_dir, "ntracks_photons.csv")
         nj_path = os.path.join(out_dir, "ntracks_jets.csv")
         ncomb_path = os.path.join(out_dir, "ntracks.csv")
 
+        # performance metrics from ROC
         if os.path.exists(roc_path):
             fpr, tpr = read_roc_csv(roc_path)
             row["auc"] = auc_from_roc(fpr, tpr, max_fpr=float(args.auc_max_fpr))
             row["fake_at_target_tpr"] = estimate_fake_at_tpr(fpr, tpr, target_tpr=float(args.target_tpr))
 
-            # prefer points file if present
+            # prefer precomputed points file if available
             if os.path.exists(points_path):
                 fp = read_points_fake(points_path, float(args.target_tpr))
                 if fp is not None:
                     row["fake_at_target_tpr"] = float(fp)
 
-            # per-run ROC plot
+            # per-run ROC plot (kept in the run directory)
             per_png = os.path.join(out_dir, "roc_iso_overlayable.png")
             plot_roc(
                 fpr,
@@ -387,7 +415,7 @@ def main() -> None:
             row["auc"] = float("nan")
             row["fake_at_target_tpr"] = float("nan")
 
-        # cost summaries
+        # cost summaries from ntracks_*.csv
         if os.path.exists(nph_path):
             s = read_ntracks_csv(nph_path)
             for k, v in s.items():
@@ -405,7 +433,7 @@ def main() -> None:
 
         rows.append(row)
 
-    # write summary CSV
+    # write summary CSV (fixed column order for easier comparison across scans)
     summary_path = os.path.join(out_root, "iso_dr_scan_summary_with_cost.csv")
     cols = [
         "iso_dr",
@@ -429,7 +457,7 @@ def main() -> None:
         for r in rows:
             w.writerow({c: r.get(c, "") for c in cols})
 
-    # overlay ROC plot
+    # overlay ROC plot (all iso_dr values on one figure)
     if roc_curves:
         plt.figure()
         for iso_dr, fpr, tpr in sorted(roc_curves, key=lambda x: x[0]):
@@ -444,8 +472,9 @@ def main() -> None:
         plt.savefig(overlay_path, dpi=200)
         plt.close()
 
-    # summary plots: performance vs iso_dr
+    # summary plots: metrics vs iso_dr
     def _get_arr(key: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Collect a metric from rows and return (x=iso_dr, y=metric) sorted by iso_dr."""
         xs: List[float] = []
         ys: List[float] = []
         for r in rows:
@@ -497,7 +526,7 @@ def main() -> None:
         plt.savefig(os.path.join(out_root, "summary_mean_tracks_in_cone_vs_iso_dr.png"), dpi=200)
         plt.close()
 
-    # preferred: plot global fraction kept
+    # preferred normalisation: global fraction kept = sum(n_iso)/sum(n_total)
     if x_frac_glob.size:
         plt.figure()
         plt.plot(x_frac_glob, y_frac_glob, marker="o")
@@ -508,7 +537,7 @@ def main() -> None:
         plt.savefig(os.path.join(out_root, "summary_global_frac_kept_vs_iso_dr.png"), dpi=200)
         plt.close()
 
-    # keep your original plot too (mean of ratios), in case you want it
+    # alternative: mean of per-object ratios
     if x_frac_mean.size:
         plt.figure()
         plt.plot(x_frac_mean, y_frac_mean, marker="o")
@@ -519,7 +548,7 @@ def main() -> None:
         plt.savefig(os.path.join(out_root, "summary_mean_frac_kept_vs_iso_dr.png"), dpi=200)
         plt.close()
 
-    # print ranking table (performance)
+    # ranking table (performance-first)
     def _key_perf(r):
         auc = r.get("auc")
         fake = r.get("fake_at_target_tpr")
@@ -543,7 +572,7 @@ def main() -> None:
         rc = int(r.get("returncode", -1))
         print(f"{iso:6.2f}  {auc:10.6f}  {fake:10.6f}  {meanN:10.3f}  {globF:9.4f}  {rc:3d}")
 
-    # print ranking table (cost-aware)
+    # ranking table (cost-aware)
     def _key_cost(r):
         fake = r.get("fake_at_target_tpr")
         meanN = r.get("comb_mean_ntracks_iso")
@@ -567,6 +596,7 @@ def main() -> None:
         rc = int(r.get("returncode", -1))
         print(f"{iso:6.2f}  {auc:10.6f}  {fake:10.6f}  {meanN:10.3f}  {globF:9.4f}  {rc:3d}")
 
+    # final file list (kept as prints for quick scan checks)
     print(f"\nwrote: {summary_path}")
     if roc_curves:
         print(f"wrote: {os.path.join(out_root, 'roc_overlay_all_iso_dr.png')}")
