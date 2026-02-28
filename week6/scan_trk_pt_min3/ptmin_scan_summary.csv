@@ -1,0 +1,15 @@
+trk_pt_min,auc,fake_at_target_tpr,kept_fraction_pt,tracks_before_pt,tracks_after_pt,returncode,out_dir
+0.5,0.9482308452417147,0.37717391304347825,0.9816589819883254,528324.0,518634.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p500
+0.55,0.9482593493463058,0.37717391304347825,0.9628674828325043,528324.0,508706.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p550
+0.6,0.9482726512617816,0.37771739130434784,0.9380380221227883,528324.0,495588.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p600
+0.7,0.9481890392216479,0.37880434782608696,0.8702103254820905,528324.0,459753.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p700
+0.75,0.9481785877166311,0.3793478260869565,0.831177459286347,528324.0,439131.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p750
+0.8,0.9479657570690179,0.3804347826086957,0.7908045063256638,528324.0,417801.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p800
+0.85,0.9479182502280328,0.3809782608695652,0.7506227239345553,528324.0,396572.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p850
+0.9,0.9475666996047432,0.3826086956521739,0.714510414064097,528324.0,377493.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p900
+0.95,0.9455885147461235,0.3842391304347826,0.6547781285726183,528324.0,345935.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_0p950
+1.0,0.9410231073274552,0.3815217391304348,0.5955303942277844,528324.0,314633.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_1p000
+1.05,0.9372501140164184,0.3967391304347826,0.5417243963931224,528324.0,286206.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_1p050
+1.1,0.9332775919732441,0.37717391304347825,0.49461504682732566,528324.0,261317.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_1p100
+1.15,0.9303378686530861,0.38804347826086955,0.45225278427631527,528324.0,238936.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_1p150
+1.2,0.9285421100638491,0.3983695652173913,0.4140357053626184,528324.0,218745.0,0,C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\week6\scan_trk_pt_min3\ptmin_1p200
