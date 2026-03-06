@@ -253,7 +253,18 @@ def read_binned_xy(path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarr
     raise ValueError(f"Unrecognised binned XY format in {path}. Columns: {list(df.columns)}")
 
 
-def plot_1d(x: np.ndarray, y: np.ndarray, title: str, xlabel: str, ylabel: str, out_png: str) -> None:
+def plot_1d(
+    x: np.ndarray,
+    y: np.ndarray,
+    title: str,
+    xlabel: str,
+    ylabel: str,
+    out_png: str,
+    *,
+    logy: bool = False,
+    xlim: Optional[Tuple[float, float]] = None,
+    density: bool = False,
+) -> None:
     """Produce a step-style 1D histogram plot."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -261,11 +272,26 @@ def plot_1d(x: np.ndarray, y: np.ndarray, title: str, xlabel: str, ylabel: str, 
     x = x[m]
     y = y[m]
 
+    # if requested, normalise the histogram heights to unit area
+    if density and x.size > 1:
+        dx = float(np.median(np.diff(np.sort(x))))
+        area = np.sum(y) * dx
+        if area > 0:
+            y = y / area
+            ylabel = "Density"
+
     plt.figure()
     plt.step(x, y, where="mid")
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
+
+    if xlim is not None:
+        plt.xlim(*xlim)
+
+    if logy:
+        plt.yscale("log")
+
     plt.tight_layout()
     plt.savefig(out_png, dpi=200)
     plt.close()
@@ -343,7 +369,24 @@ def main() -> None:
         try:
             if key in one_d:
                 x, y = read_1d_hist(path)
+
+                # default (current behaviour)
                 plot_1d(x, y, TITLES[key], XLABELS[key], YLABELS[key], out_png)
+
+                # extra views for d0 distributions
+                if key in {"offl_d0", "truth_d0"}:
+                    # log-y, full range
+                    out_log = os.path.join(out_dir, f"{key}_logy.png")
+                    plot_1d(x, y, TITLES[key], XLABELS[key], YLABELS[key], out_log, logy=True)
+
+                    # zoom range (tweak if you want)
+                    zoom = (-2.0, 2.0)
+                    out_zoom = os.path.join(out_dir, f"{key}_zoom.png")
+                    plot_1d(x, y, TITLES[key], XLABELS[key], YLABELS[key], out_zoom, xlim=zoom)
+
+                    # zoom + log-y
+                    out_zoom_log = os.path.join(out_dir, f"{key}_zoom_logy.png")
+                    plot_1d(x, y, TITLES[key], XLABELS[key], YLABELS[key], out_zoom_log, xlim=zoom, logy=True)
             else:
                 x, y, e = read_binned_xy(path)
                 plot_xy(x, y, e, TITLES[key], XLABELS[key], YLABELS[key], out_png)
