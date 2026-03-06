@@ -425,7 +425,7 @@ def main():
 
     data_dir = r"C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\1k_ev"
 
-    out_dir = os.path.join(data_dir, "ml_outputs")
+    out_dir = os.path.join(os.path.dirname(__file__), "results")
     os.makedirs(out_dir, exist_ok=True)
 
     X, y, groups = build_dataset(data_dir, iso_dr=ISO_DR, trk_pt_min=TRK_PT_MIN)
