@@ -108,17 +108,51 @@ def delta_r(eta1, phi1, eta2, phi2):
 
 def get_feature_names():
     return [
+        # object 4-vector
         "obj_pt",
         "obj_eta",
         "obj_phi",
         "obj_e",
+
+        # requested weekly-task features
         "sum_pt",
         "n_tracks",
         "pt1_over_ptobj",
         "pt2_over_ptobj",
-        "dr1_over_ptobj",
-        "dr2_over_ptobj",
+        "dr1",
+        "dr2",
+
+        # radial isolation structure
+        "ntrk_r0_0p05",
+        "sumpt_r0_0p05",
+        "ntrk_r0p05_0p10",
+        "sumpt_r0p05_0p10",
+        "ntrk_r0p10_0p20",
+        "sumpt_r0p10_0p20",
+        "ntrk_r0p20_iso",
+        "sumpt_r0p20_iso",
+
+        # richer summary features
+        "max_pt",
+        "mean_dr",
+        "ptw_mean_dr",
+        "top2_sumpt_frac",
+        "n_tracks_core",
+        "sum_pt_core",
     ]
+
+
+# -----------------------------
+# ring features
+# -----------------------------
+
+def _ring_stats(assoc: pd.DataFrame, ring_edges):
+    out = []
+    for lo, hi in ring_edges:
+        sub = assoc[(assoc["dR"] >= lo) & (assoc["dR"] < hi)]
+        out.append(float(len(sub)))
+        out.append(float(sub["pT"].sum()) if len(sub) else 0.0)
+    return out
 
 
 # -----------------------------
@@ -127,14 +161,24 @@ def get_feature_names():
 
 def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
     """
-    Features aligned to weekly task:
+    Features:
       - object 4-vector: pT, eta, phi, e
-      - sum_pt
-      - N_tracks
-      - pt_highest_track / pt_object
-      - pt_2_highest_track / pt_object
-      - dR_highest_track / pt_object
-      - dR_2_highest_track / pt_object
+      - requested weekly-task features:
+          * sum_pt
+          * N_tracks
+          * pt_highest_track / pt_object
+          * pt_2_highest_track / pt_object
+          * dR_highest_track
+          * dR_2_highest_track
+      - radial isolation structure:
+          * counts and summed pT in dR rings
+      - richer summary features:
+          * max_pt
+          * mean_dr
+          * pt-weighted mean_dr
+          * top2_sumpt_frac
+          * n_tracks_core
+          * sum_pt_core
 
     Notes:
       - highest / 2-highest are by track pT
@@ -151,7 +195,14 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
     if not np.isfinite(pt_obj) or pt_obj <= 0:
         return None
 
-    if tracks.empty:
+    ring_edges = [
+        (0.00, 0.05),
+        (0.05, 0.10),
+        (0.10, 0.20),
+        (0.20, iso_dr),
+    ]
+
+    def padded_zero_features():
         return [
             pt_obj,
             eta_obj,
@@ -159,26 +210,28 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
             e_obj,
             0.0,  # sum_pt
             0.0,  # n_tracks
-            0.0,  # pt1/ptobj
-            0.0,  # pt2/ptobj
-            0.0,  # dr1/ptobj
-            0.0,  # dr2/ptobj
+            0.0,  # pt1_over_ptobj
+            0.0,  # pt2_over_ptobj
+            0.0,  # dr1
+            0.0,  # dr2
+            0.0, 0.0,  # ring 1
+            0.0, 0.0,  # ring 2
+            0.0, 0.0,  # ring 3
+            0.0, 0.0,  # ring 4
+            0.0,  # max_pt
+            0.0,  # mean_dr
+            0.0,  # ptw_mean_dr
+            0.0,  # top2_sumpt_frac
+            0.0,  # n_tracks_core
+            0.0,  # sum_pt_core
         ]
+
+    if tracks.empty:
+        return padded_zero_features()
 
     tracks = tracks[tracks["pT"] > trk_pt_min].copy()
     if tracks.empty:
-        return [
-            pt_obj,
-            eta_obj,
-            phi_obj,
-            e_obj,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        ]
+        return padded_zero_features()
 
     tracks["dR"] = tracks.apply(
         lambda row: delta_r(eta_obj, phi_obj, float(row["eta"]), float(row["phi"])),
@@ -187,18 +240,7 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
 
     assoc = tracks[tracks["dR"] < iso_dr].copy()
     if assoc.empty:
-        return [
-            pt_obj,
-            eta_obj,
-            phi_obj,
-            e_obj,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        ]
+        return padded_zero_features()
 
     assoc = assoc.sort_values("pT", ascending=False).reset_index(drop=True)
 
@@ -213,8 +255,17 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
 
     pt1_over_ptobj = pt1 / pt_obj
     pt2_over_ptobj = pt2 / pt_obj
-    dr1_over_ptobj = dr1 / pt_obj
-    dr2_over_ptobj = dr2 / pt_obj
+
+    ring_features = _ring_stats(assoc, ring_edges)
+
+    max_pt = pt1
+    mean_dr = float(assoc["dR"].mean()) if len(assoc) else 0.0
+    ptw_mean_dr = float((assoc["pT"] * assoc["dR"]).sum() / sum_pt) if sum_pt > 0 else 0.0
+    top2_sumpt_frac = float((pt1 + pt2) / sum_pt) if sum_pt > 0 else 0.0
+
+    core = assoc[assoc["dR"] < 0.05]
+    n_tracks_core = float(len(core))
+    sum_pt_core = float(core["pT"].sum()) if len(core) else 0.0
 
     return [
         pt_obj,
@@ -225,8 +276,15 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
         n_tracks,
         pt1_over_ptobj,
         pt2_over_ptobj,
-        dr1_over_ptobj,
-        dr2_over_ptobj,
+        dr1,
+        dr2,
+        *ring_features,
+        max_pt,
+        mean_dr,
+        ptw_mean_dr,
+        top2_sumpt_frac,
+        n_tracks_core,
+        sum_pt_core,
     ]
 
 
@@ -384,6 +442,11 @@ def build_model(n_features, learning_rate=1e-3, l2=1e-4, dropout=0.20):
     model = keras.Sequential(
         [
             layers.Input(shape=(n_features,)),
+            layers.Dense(128, kernel_regularizer=reg, use_bias=False),
+            layers.BatchNormalization(),
+            layers.Activation("relu"),
+            layers.Dropout(dropout),
+
             layers.Dense(64, kernel_regularizer=reg, use_bias=False),
             layers.BatchNormalization(),
             layers.Activation("relu"),
@@ -413,7 +476,8 @@ def build_model(n_features, learning_rate=1e-3, l2=1e-4, dropout=0.20):
 def main():
     ISO_DR = 0.20
     TRK_PT_MIN = 0.75
-    TARGET_TPR = 0.99
+    TARGET_TPRS = [0.95, 0.97, 0.99]
+    PRIMARY_TPR = 0.99
     MAX_FPR_PAUC = 0.05
 
     LR = 1e-3
@@ -466,7 +530,7 @@ def main():
         x_val=X_val,
         y_val=y_val,
         max_fpr=MAX_FPR_PAUC,
-        target_tpr=TARGET_TPR,
+        target_tpr=PRIMARY_TPR,
     )
 
     es = keras.callbacks.EarlyStopping(
@@ -493,9 +557,6 @@ def main():
     val_auc = float(roc_auc_score(y_val, y_val_pred))
     test_auc = float(roc_auc_score(y_test, y_test_pred))
 
-    val_fpr99, val_thr99, _ = fake_rate_at_target_tpr(y_val, y_val_pred, target_tpr=TARGET_TPR)
-    test_fpr99, _, _ = fake_rate_at_target_tpr(y_test, y_test_pred, target_tpr=TARGET_TPR)
-
     roc_val = roc_points_df(y_val, y_val_pred)
     roc_test = roc_points_df(y_test, y_test_pred)
 
@@ -509,14 +570,22 @@ def main():
 
     with open(os.path.join(out_dir, "summary.txt"), "w", encoding="utf-8") as f:
         f.write("This run uses a neural network.\n")
-        f.write("Feature set aligned to weekly task:\n")
+        f.write("Feature set:\n")
         for name in get_feature_names():
             f.write(f"{name}\n")
         f.write(f"\nVal AUC: {val_auc}\n")
         f.write(f"Test AUC: {test_auc}\n")
-        f.write(f"Val fake@99: {val_fpr99}\n")
-        f.write(f"Test fake@99: {test_fpr99}\n")
-        f.write(f"Val threshold at 99% TPR: {val_thr99}\n")
+
+        for tpr in TARGET_TPRS:
+            val_fpr, val_thr, _ = fake_rate_at_target_tpr(
+                y_val, y_val_pred, target_tpr=tpr
+            )
+            test_fpr, _, _ = fake_rate_at_target_tpr(
+                y_test, y_test_pred, target_tpr=tpr
+            )
+            f.write(f"\nVal fake@{int(tpr * 100)}: {val_fpr}\n")
+            f.write(f"Test fake@{int(tpr * 100)}: {test_fpr}\n")
+            f.write(f"Val threshold at {int(tpr * 100)}% TPR: {val_thr}\n")
 
     print("\n--- results ---")
     print("This is a neural network model.")
@@ -526,9 +595,19 @@ def main():
 
     print(f"\nVal AUC: {val_auc:.6f}")
     print(f"Test AUC: {test_auc:.6f}")
-    print(f"Val fake@99: {val_fpr99:.6f}")
-    print(f"Test fake@99: {test_fpr99:.6f}")
-    print(f"Val threshold at 99% TPR: {val_thr99:.6f}")
+
+    for tpr in TARGET_TPRS:
+        val_fpr, val_thr, _ = fake_rate_at_target_tpr(
+            y_val, y_val_pred, target_tpr=tpr
+        )
+        test_fpr, _, _ = fake_rate_at_target_tpr(
+            y_test, y_test_pred, target_tpr=tpr
+        )
+
+        print(f"\nTPR = {tpr:.2f}")
+        print(f"Val fake rate: {val_fpr:.6f}")
+        print(f"Test fake rate: {test_fpr:.6f}")
+        print(f"Val threshold: {val_thr:.6f}")
 
 
 if __name__ == "__main__":
