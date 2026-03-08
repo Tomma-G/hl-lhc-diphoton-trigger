@@ -4,6 +4,7 @@ import os
 import glob
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
@@ -53,7 +54,8 @@ def read_noheader(path: str, kind: str) -> pd.DataFrame:
             engine="python",
             on_bad_lines="skip",
         )
-    except pd.errors.EmptyDataError:
+    except (pd.errors.EmptyDataError, EOFError, OSError, ValueError):
+        print(f"[warn] skipping unreadable file: {path}")
         return pd.DataFrame()
     except UnicodeDecodeError:
         try:
@@ -65,7 +67,8 @@ def read_noheader(path: str, kind: str) -> pd.DataFrame:
                 on_bad_lines="skip",
                 encoding="latin-1",
             )
-        except pd.errors.EmptyDataError:
+        except (pd.errors.EmptyDataError, EOFError, OSError, ValueError):
+            print(f"[warn] skipping unreadable file: {path}")
             return pd.DataFrame()
 
     if df.empty:
@@ -293,17 +296,25 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
 # -----------------------------
 
 def build_dataset(data_dir, iso_dr, trk_pt_min):
-    photon_files = sorted(glob.glob(os.path.join(data_dir, "photons_*.csv")))
+    photon_files = sorted(
+        glob.glob(os.path.join(data_dir, "photons_*.csv")) +
+        glob.glob(os.path.join(data_dir, "photons_*.csv.gz"))
+    )
 
     X = []
     y = []
     groups = []
 
     for ph_file in photon_files:
-        event_id = os.path.basename(ph_file).split("_")[-1].replace(".csv", "")
+        base = os.path.basename(ph_file)
+        event_id = base.split("_")[-1].replace(".csv.gz", "").replace(".csv", "")
 
-        jet_file = os.path.join(data_dir, f"jets_{event_id}.csv")
-        trk_file = os.path.join(data_dir, f"tracks_{event_id}.csv")
+        if ph_file.endswith(".csv.gz"):
+            jet_file = os.path.join(data_dir, f"jets_{event_id}.csv.gz")
+            trk_file = os.path.join(data_dir, f"tracks_{event_id}.csv.gz")
+        else:
+            jet_file = os.path.join(data_dir, f"jets_{event_id}.csv")
+            trk_file = os.path.join(data_dir, f"tracks_{event_id}.csv")
 
         if not (os.path.exists(jet_file) and os.path.exists(trk_file)):
             continue
@@ -464,7 +475,10 @@ def build_model(n_features, learning_rate=1e-3, l2=1e-4, dropout=0.20):
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss="binary_crossentropy",
-        metrics=[keras.metrics.AUC(name="auc")],
+        metrics=[
+            "accuracy",
+            keras.metrics.AUC(name="auc"),
+        ],
     )
     return model
 
@@ -487,7 +501,7 @@ def main():
     BATCH_SIZE = 256
     PATIENCE = 12
 
-    data_dir = r"C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\1k_ev"
+    data_dir = r"C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\10k_ev"
 
     out_dir = os.path.join(os.path.dirname(__file__), "results")
     os.makedirs(out_dir, exist_ok=True)
@@ -541,7 +555,7 @@ def main():
         verbose=1,
     )
 
-    model.fit(
+    history = model.fit(
         X_train,
         y_train,
         epochs=EPOCHS,
@@ -550,6 +564,30 @@ def main():
         verbose=1,
         callbacks=[val_cb, es],
     )
+
+    # train vs validation loss
+    plt.figure()
+    plt.plot(history.history["loss"], label="train loss")
+    plt.plot(history.history["val_loss"], label="validation loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training vs Validation Loss")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "train_validation_loss.png"), dpi=200)
+    plt.close()
+
+    # train vs validation accuracy
+    plt.figure()
+    plt.plot(history.history["accuracy"], label="train accuracy")
+    plt.plot(history.history["val_accuracy"], label="validation accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.title("Training vs Validation Accuracy")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "train_validation_accuracy.png"), dpi=200)
+    plt.close()
 
     y_val_pred = model.predict(X_val, verbose=0).ravel()
     y_test_pred = model.predict(X_test, verbose=0).ravel()
@@ -563,7 +601,9 @@ def main():
     roc_val.to_csv(os.path.join(out_dir, "roc_val.csv"), index=False)
     roc_test.to_csv(os.path.join(out_dir, "roc_test.csv"), index=False)
 
-    pd.DataFrame(X, columns=get_feature_names()).to_csv(
+    dataset_df = pd.DataFrame(X, columns=get_feature_names())
+    dataset_df["label"] = y
+    dataset_df.to_csv(
         os.path.join(out_dir, "engineered_dataset.csv"),
         index=False,
     )
@@ -575,6 +615,9 @@ def main():
             f.write(f"{name}\n")
         f.write(f"\nVal AUC: {val_auc}\n")
         f.write(f"Test AUC: {test_auc}\n")
+        f.write("\nSaved plots:\n")
+        f.write("train_validation_loss.png\n")
+        f.write("train_validation_accuracy.png\n")
 
         for tpr in TARGET_TPRS:
             val_fpr, val_thr, _ = fake_rate_at_target_tpr(
