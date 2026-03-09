@@ -1,0 +1,60 @@
+This run uses an XGBoost model.
+Experiment: xgboost_baseline
+Model: XGBClassifier
+Cache file: c:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\ML\cache\dataset_iso0p2_pt0p75_exclconv.npz
+Converted photons: excluded
+Dropped features:
+iso_ratio
+core_iso_ratio
+maxpt_over_objpt
+core_frac
+Feature set:
+obj_pt
+obj_eta
+obj_phi
+obj_e
+sum_pt
+n_tracks
+pt1_over_ptobj
+pt2_over_ptobj
+dr1
+dr2
+ntrk_r0_0p05
+sumpt_r0_0p05
+ntrk_r0p05_0p10
+sumpt_r0p05_0p10
+ntrk_r0p10_0p20
+sumpt_r0p10_0p20
+ntrk_r0p20_iso
+sumpt_r0p20_iso
+max_pt
+mean_dr
+ptw_mean_dr
+top2_sumpt_frac
+n_tracks_core
+sum_pt_core
+
+Model hyperparameters:
+n_estimators: 500
+learning_rate: 0.05
+max_depth: 6
+min_child_weight: 5
+subsample: 0.8
+colsample_bytree: 0.8
+tree_method: hist
+
+Val AUC: 0.9049730739482235
+Test AUC: 0.9028355394463983
+Permutation-importance base validation AUC: 0.9049730739482235
+
+Val fake@95: 0.22428467212450354
+Test fake@95: 0.22015760545659227
+Val threshold at 95% TPR: 0.05667983666062355
+
+Val fake@97: 0.3179054875577531
+Test fake@97: 0.27097543209059005
+Val threshold at 97% TPR: 0.0192511535435915
+
+Val fake@99: 0.47126529950555196
+Test fake@99: 0.46864446063174625
+Val threshold at 99% TPR: 0.00604880437254908

@@ -118,6 +118,65 @@ def plot_roc_curves(results_dir, out_dir):
     plt.savefig(os.path.join(out_dir, "efficiency_vs_fake_rate.png"), dpi=200)
     plt.close()
 
+def plot_classifier_score_distributions(results_dir, out_dir):
+    val_path = os.path.join(results_dir, "scores_val.csv")
+    test_path = os.path.join(results_dir, "scores_test.csv")
+
+    if not (os.path.exists(val_path) and os.path.exists(test_path)):
+        raise RuntimeError("scores_val.csv and/or scores_test.csv are missing.")
+
+    df_val = pd.read_csv(val_path)
+    df_test = pd.read_csv(test_path)
+
+    val_sig = df_val[df_val["label"] == 1]["score"].to_numpy()
+    val_bkg = df_val[df_val["label"] == 0]["score"].to_numpy()
+    test_sig = df_test[df_test["label"] == 1]["score"].to_numpy()
+    test_bkg = df_test[df_test["label"] == 0]["score"].to_numpy()
+
+    plt.figure(figsize=(8, 6))
+
+    plt.hist(
+        val_bkg,
+        bins=50,
+        range=(0, 1),
+        density=True,
+        histtype="step",
+        label="validation background",
+    )
+    plt.hist(
+        val_sig,
+        bins=50,
+        range=(0, 1),
+        density=True,
+        histtype="step",
+        label="validation signal",
+    )
+    plt.hist(
+        test_bkg,
+        bins=50,
+        range=(0, 1),
+        density=True,
+        histtype="step",
+        linestyle="--",
+        label="test background",
+    )
+    plt.hist(
+        test_sig,
+        bins=50,
+        range=(0, 1),
+        density=True,
+        histtype="step",
+        linestyle="--",
+        label="test signal",
+    )
+
+    plt.xlabel("NN photon score")
+    plt.ylabel("Density")
+    plt.title("Classifier Score Distributions")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "classifier_score_distributions.png"), dpi=200)
+    plt.close()
 
 def main():
     results_dir = r"C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\ML\results"
@@ -135,6 +194,7 @@ def main():
     plot_correlation_matrix(df, feature_names, out_dir)
     plot_signal_background_features(df, feature_names, out_dir)
     plot_roc_curves(results_dir, out_dir)
+    plot_classifier_score_distributions(results_dir, out_dir)
 
     print("saved diagnostic plots to:", out_dir)
 

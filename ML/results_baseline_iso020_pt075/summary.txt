@@ -1,0 +1,53 @@
+This run uses a neural network.
+Experiment: baseline_iso020_pt075
+Cache file: c:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\ML\cache\dataset_iso0p2_pt0p75_exclconv.npz
+Converted photons: excluded
+Feature set:
+obj_pt
+obj_eta
+obj_phi
+obj_e
+sum_pt
+n_tracks
+pt1_over_ptobj
+pt2_over_ptobj
+dr1
+dr2
+ntrk_r0_0p05
+sumpt_r0_0p05
+ntrk_r0p05_0p10
+sumpt_r0p05_0p10
+ntrk_r0p10_0p20
+sumpt_r0p10_0p20
+ntrk_r0p20_iso
+sumpt_r0p20_iso
+max_pt
+mean_dr
+ptw_mean_dr
+top2_sumpt_frac
+n_tracks_core
+sum_pt_core
+
+Val AUC: 0.9040261480291233
+Test AUC: 0.9006005039111691
+
+Saved outputs:
+train_validation_loss.png
+train_validation_accuracy.png
+scores_val.csv
+scores_test.csv
+roc_val.csv
+roc_test.csv
+engineered_dataset.csv
+
+Val fake@95: 0.22136662073437627
+Test fake@95: 0.2342030329117277
+Val threshold at 95% TPR: 0.06645730137825012
+
+Val fake@97: 0.29610115911485774
+Test fake@97: 0.27834712932918343
+Val threshold at 97% TPR: 0.028461034297943114
+
+Val fake@99: 0.43011104806679035
+Test fake@99: 0.45552479968214005
+Val threshold at 99% TPR: 0.01335919667035346

@@ -1,0 +1,60 @@
+This run uses a neural network.
+Experiment: no_obj_kinematics_noweight
+Cache file: c:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\ML\cache\dataset_iso0p2_pt0p75_exclconv.npz
+Converted photons: excluded
+Class weights: None
+Dropped features:
+obj_pt
+obj_eta
+obj_phi
+obj_e
+iso_ratio
+core_iso_ratio
+maxpt_over_objpt
+core_frac
+Feature set:
+sum_pt
+n_tracks
+pt1_over_ptobj
+pt2_over_ptobj
+dr1
+dr2
+ntrk_r0_0p05
+sumpt_r0_0p05
+ntrk_r0p05_0p10
+sumpt_r0p05_0p10
+ntrk_r0p10_0p20
+sumpt_r0p10_0p20
+ntrk_r0p20_iso
+sumpt_r0p20_iso
+max_pt
+mean_dr
+ptw_mean_dr
+top2_sumpt_frac
+n_tracks_core
+sum_pt_core
+
+Val AUC: 0.9027025455416897
+Test AUC: 0.8980652181045052
+
+Saved outputs:
+train_validation_loss.png
+train_validation_accuracy.png
+scores_val.csv
+scores_test.csv
+roc_val.csv
+roc_test.csv
+engineered_dataset.csv
+ablation_summary.csv
+
+Val fake@95: 0.23676744751560347
+Test fake@95: 0.2512217733924905
+Val threshold at 95% TPR: 0.04218093380331993
+
+Val fake@97: 0.30809759260760317
+Test fake@97: 0.2869942387921328
+Val threshold at 97% TPR: 0.019110340401530267
+
+Val fake@99: 0.41865931750020263
+Test fake@99: 0.46738626581021125
+Val threshold at 99% TPR: 0.010071583166718483

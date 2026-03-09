@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # imports
+import argparse
 import os
 import glob
 import numpy as np
@@ -74,10 +75,16 @@ def read_noheader(path: str, kind: str) -> pd.DataFrame:
     if df.empty:
         return df
 
-    if kind in ("photons", "jets"):
+    if kind == "photons":
         cols = ["pT", "eta", "phi", "e", "conversionType"]
         df.columns = cols[: len(df.columns)]
         keep = ["pT", "eta", "phi", "e"][: len(df.columns)]
+
+    elif kind == "jets":
+        cols = ["pT", "eta", "phi", "e", "conversionType"]
+        df.columns = cols[: len(df.columns)]
+        keep = ["pT", "eta", "phi", "e"][: len(df.columns)]
+
     elif kind == "tracks":
         cols = ["pT", "eta", "phi", "eTot", "z0", "d0"]
         df.columns = cols[: len(df.columns)]
@@ -87,6 +94,10 @@ def read_noheader(path: str, kind: str) -> pd.DataFrame:
 
     for c in keep:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    if kind == "photons" and "conversionType" in df.columns:
+        df["conversionType"] = pd.to_numeric(df["conversionType"], errors="coerce")
+
     df = df.dropna(subset=keep)
 
     return df
@@ -142,6 +153,12 @@ def get_feature_names():
         "top2_sumpt_frac",
         "n_tracks_core",
         "sum_pt_core",
+
+        # explicit ratio features
+        "iso_ratio",
+        "core_iso_ratio",
+        "maxpt_over_objpt",
+        "core_frac",
     ]
 
 
@@ -182,6 +199,11 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
           * top2_sumpt_frac
           * n_tracks_core
           * sum_pt_core
+      - explicit ratio features:
+          * iso_ratio = sum_pt / pt_obj
+          * core_iso_ratio = sum_pt_core / pt_obj
+          * maxpt_over_objpt = max_pt / pt_obj
+          * core_frac = sum_pt_core / sum_pt
 
     Notes:
       - highest / 2-highest are by track pT
@@ -227,6 +249,10 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
             0.0,  # top2_sumpt_frac
             0.0,  # n_tracks_core
             0.0,  # sum_pt_core
+            0.0,  # iso_ratio
+            0.0,  # core_iso_ratio
+            0.0,  # maxpt_over_objpt
+            0.0,  # core_frac
         ]
 
     if tracks.empty:
@@ -270,6 +296,11 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
     n_tracks_core = float(len(core))
     sum_pt_core = float(core["pT"].sum()) if len(core) else 0.0
 
+    iso_ratio = float(sum_pt / pt_obj) if pt_obj > 0 else 0.0
+    core_iso_ratio = float(sum_pt_core / pt_obj) if pt_obj > 0 else 0.0
+    maxpt_over_objpt = float(max_pt / pt_obj) if pt_obj > 0 else 0.0
+    core_frac = float(sum_pt_core / sum_pt) if sum_pt > 0 else 0.0
+
     return [
         pt_obj,
         eta_obj,
@@ -288,6 +319,10 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
         top2_sumpt_frac,
         n_tracks_core,
         sum_pt_core,
+        iso_ratio,
+        core_iso_ratio,
+        maxpt_over_objpt,
+        core_frac,
     ]
 
 
@@ -295,7 +330,7 @@ def engineer_features(obj, tracks, iso_dr=0.30, trk_pt_min=1.0):
 # load dataset (returns groups by event_id)
 # -----------------------------
 
-def build_dataset(data_dir, iso_dr, trk_pt_min):
+def build_dataset(data_dir, iso_dr, trk_pt_min, include_converted=False):
     photon_files = sorted(
         glob.glob(os.path.join(data_dir, "photons_*.csv")) +
         glob.glob(os.path.join(data_dir, "photons_*.csv.gz"))
@@ -322,6 +357,9 @@ def build_dataset(data_dir, iso_dr, trk_pt_min):
         photons = read_noheader(ph_file, "photons")
         jets = read_noheader(jet_file, "jets")
         tracks = read_noheader(trk_file, "tracks")
+
+        if not include_converted and not photons.empty and "conversionType" in photons.columns:
+            photons = photons[photons["conversionType"] == 0].reset_index(drop=True)
 
         if photons.empty and jets.empty:
             continue
@@ -484,10 +522,32 @@ def build_model(n_features, learning_rate=1e-3, l2=1e-4, dropout=0.20):
 
 
 # -----------------------------
+# feature subset utility
+# -----------------------------
+
+def select_feature_subset(X, feature_names, drop_features):
+    # drop selected features from X without rebuilding the dataset
+    drop_features = set(drop_features)
+    keep_idx = [i for i, name in enumerate(feature_names) if name not in drop_features]
+    kept_names = [feature_names[i] for i in keep_idx]
+    X_sel = X[:, keep_idx]
+    return X_sel, kept_names
+
+
+# -----------------------------
 # main
 # -----------------------------
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--include-converted",
+        action="store_true",
+        default=False,
+        help="include converted photons (default: exclude them)",
+    )
+    args = parser.parse_args()
+
     ISO_DR = 0.20
     TRK_PT_MIN = 0.75
     TARGET_TPRS = [0.95, 0.97, 0.99]
@@ -497,20 +557,78 @@ def main():
     LR = 1e-3
     L2 = 1e-4
     DROPOUT = 0.20
-    EPOCHS = 100
-    BATCH_SIZE = 256
+    EPOCHS = 35
+    BATCH_SIZE = 512
     PATIENCE = 12
 
     data_dir = r"C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\10k_ev"
 
-    out_dir = os.path.join(os.path.dirname(__file__), "results")
+    # set an experiment label so results do not overwrite earlier runs
+    EXPERIMENT = "no_obj_kinematics_noweight"
+    DROP_FEATURES = [
+        "obj_pt",
+        "obj_eta",
+        "obj_phi",
+        "obj_e",
+        "iso_ratio",
+        "core_iso_ratio",
+        "maxpt_over_objpt",
+        "core_frac",
+    ]
+
+    out_dir = os.path.join(os.path.dirname(__file__), f"results_{EXPERIMENT}")
     os.makedirs(out_dir, exist_ok=True)
 
-    X, y, groups = build_dataset(data_dir, iso_dr=ISO_DR, trk_pt_min=TRK_PT_MIN)
+    cache_dir = os.path.join(os.path.dirname(__file__), "cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    conv_tag = "inclconv" if args.include_converted else "exclconv"
+    cache_name = (
+        f"dataset_iso{str(ISO_DR).replace('.', 'p')}_"
+        f"pt{str(TRK_PT_MIN).replace('.', 'p')}_"
+        f"{conv_tag}.npz"
+    )
+    cache_path = os.path.join(cache_dir, cache_name)
+
+    feature_names = get_feature_names()
+
+    if os.path.exists(cache_path):
+        data = np.load(cache_path, allow_pickle=True)
+        X = data["X"]
+        y = data["y"]
+        groups = data["groups"]
+        cached_feature_names = list(data["feature_names"])
+        print(f"loaded cached dataset from {cache_path}")
+
+        if cached_feature_names != feature_names:
+            raise RuntimeError(
+                "cached feature names do not match current get_feature_names(). "
+                "delete the cache file and rebuild."
+            )
+    else:
+        X, y, groups = build_dataset(
+            data_dir,
+            iso_dr=ISO_DR,
+            trk_pt_min=TRK_PT_MIN,
+            include_converted=args.include_converted,
+        )
+        np.savez_compressed(
+            cache_path,
+            X=X,
+            y=y,
+            groups=groups,
+            feature_names=np.array(feature_names, dtype=object),
+        )
+        print(f"saved cached dataset to {cache_path}")
+
+    if DROP_FEATURES:
+        X, feature_names = select_feature_subset(X, feature_names, DROP_FEATURES)
+        print("dropped features:", DROP_FEATURES)
 
     print("Dataset shape:", X.shape)
     print("positives (photons):", int(y.sum()), "negatives (jets):", int((1 - y).sum()))
-    print("feature names:", get_feature_names())
+    print("feature names:", feature_names)
+    print("converted photons:", "included" if args.include_converted else "excluded")
 
     if len(y) == 0:
         raise RuntimeError("no samples built. check file naming and data_dir")
@@ -527,6 +645,13 @@ def main():
 
     X_train, X_val = X_train_full[tr_idx], X_train_full[va_idx]
     y_train, y_val = y_train_full[tr_idx], y_train_full[va_idx]
+
+    n_pos = np.sum(y_train == 1)
+    n_neg = np.sum(y_train == 0)
+
+    class_weight = None
+
+    print("class_weight:", class_weight)
 
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
@@ -563,6 +688,7 @@ def main():
         validation_data=(X_val, y_val),
         verbose=1,
         callbacks=[val_cb, es],
+        class_weight=class_weight,
     )
 
     # train vs validation loss
@@ -592,6 +718,16 @@ def main():
     y_val_pred = model.predict(X_val, verbose=0).ravel()
     y_test_pred = model.predict(X_test, verbose=0).ravel()
 
+    pd.DataFrame({
+        "label": y_val,
+        "score": y_val_pred,
+    }).to_csv(os.path.join(out_dir, "scores_val.csv"), index=False)
+
+    pd.DataFrame({
+        "label": y_test,
+        "score": y_test_pred,
+    }).to_csv(os.path.join(out_dir, "scores_test.csv"), index=False)
+
     val_auc = float(roc_auc_score(y_val, y_val_pred))
     test_auc = float(roc_auc_score(y_test, y_test_pred))
 
@@ -601,23 +737,65 @@ def main():
     roc_val.to_csv(os.path.join(out_dir, "roc_val.csv"), index=False)
     roc_test.to_csv(os.path.join(out_dir, "roc_test.csv"), index=False)
 
-    dataset_df = pd.DataFrame(X, columns=get_feature_names())
+    dataset_df = pd.DataFrame(X, columns=feature_names)
     dataset_df["label"] = y
     dataset_df.to_csv(
         os.path.join(out_dir, "engineered_dataset.csv"),
         index=False,
     )
 
+    summary_row = pd.DataFrame([{
+        "experiment": EXPERIMENT,
+        "n_features": len(feature_names),
+        "val_auc": val_auc,
+        "test_auc": test_auc,
+        "val_fake95": fake_rate_at_target_tpr(y_val, y_val_pred, 0.95)[0],
+        "test_fake95": fake_rate_at_target_tpr(y_test, y_test_pred, 0.95)[0],
+        "val_fake97": fake_rate_at_target_tpr(y_val, y_val_pred, 0.97)[0],
+        "test_fake97": fake_rate_at_target_tpr(y_test, y_test_pred, 0.97)[0],
+        "val_fake99": fake_rate_at_target_tpr(y_val, y_val_pred, 0.99)[0],
+        "test_fake99": fake_rate_at_target_tpr(y_test, y_test_pred, 0.99)[0],
+        "dropped_features": ",".join(DROP_FEATURES) if DROP_FEATURES else "",
+    }])
+
+    summary_csv = os.path.join(os.path.dirname(__file__), "ablation_summary.csv")
+
+    if os.path.exists(summary_csv):
+        old = pd.read_csv(summary_csv)
+        old = old[old["experiment"] != EXPERIMENT]
+        summary_row = pd.concat([old, summary_row], ignore_index=True)
+
+    summary_row.to_csv(summary_csv, index=False)
+
     with open(os.path.join(out_dir, "summary.txt"), "w", encoding="utf-8") as f:
         f.write("This run uses a neural network.\n")
+        f.write(f"Experiment: {EXPERIMENT}\n")
+        f.write(f"Cache file: {cache_path}\n")
+        f.write(f"Converted photons: {'included' if args.include_converted else 'excluded'}\n")
+        if class_weight is None:
+            f.write("Class weights: None\n")
+        else:
+            f.write(f"Class weight background: {class_weight[0]}\n")
+            f.write(f"Class weight signal: {class_weight[1]}\n")
+        if DROP_FEATURES:
+            f.write("Dropped features:\n")
+            for name in DROP_FEATURES:
+                f.write(f"{name}\n")
+
         f.write("Feature set:\n")
-        for name in get_feature_names():
+        for name in feature_names:
             f.write(f"{name}\n")
         f.write(f"\nVal AUC: {val_auc}\n")
         f.write(f"Test AUC: {test_auc}\n")
-        f.write("\nSaved plots:\n")
+        f.write("\nSaved outputs:\n")
         f.write("train_validation_loss.png\n")
         f.write("train_validation_accuracy.png\n")
+        f.write("scores_val.csv\n")
+        f.write("scores_test.csv\n")
+        f.write("roc_val.csv\n")
+        f.write("roc_test.csv\n")
+        f.write("engineered_dataset.csv\n")
+        f.write("ablation_summary.csv\n")
 
         for tpr in TARGET_TPRS:
             val_fpr, val_thr, _ = fake_rate_at_target_tpr(
@@ -633,7 +811,7 @@ def main():
     print("\n--- results ---")
     print("This is a neural network model.")
     print("Features used:")
-    for name in get_feature_names():
+    for name in feature_names:
         print(" ", name)
 
     print(f"\nVal AUC: {val_auc:.6f}")

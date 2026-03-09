@@ -1,0 +1,45 @@
+This run uses a neural network.
+Feature set:
+obj_pt
+obj_eta
+obj_phi
+obj_e
+sum_pt
+n_tracks
+pt1_over_ptobj
+pt2_over_ptobj
+dr1
+dr2
+ntrk_r0_0p05
+sumpt_r0_0p05
+ntrk_r0p05_0p10
+sumpt_r0p05_0p10
+ntrk_r0p10_0p20
+sumpt_r0p10_0p20
+ntrk_r0p20_iso
+sumpt_r0p20_iso
+max_pt
+mean_dr
+ptw_mean_dr
+top2_sumpt_frac
+n_tracks_core
+sum_pt_core
+
+Val AUC: 0.8874016613792066
+Test AUC: 0.8827798297434094
+
+Saved plots:
+train_validation_loss.png
+train_validation_accuracy.png
+
+Val fake@95: 0.3039636864715895
+Test fake@95: 0.2991854844050063
+Val threshold at 95% TPR: 0.0427625797688961
+
+Val fake@97: 0.37286212207181646
+Test fake@97: 0.36951195285080457
+Val threshold at 97% TPR: 0.02430683143436909
+
+Val fake@99: 0.5121990759503932
+Test fake@99: 0.5719488775577777
+Val threshold at 99% TPR: 0.011593113355338573
