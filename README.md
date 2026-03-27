@@ -14,7 +14,7 @@ The project investigates whether **track-based observables** can be used to impr
 
 The study compares:
 
-- a simple **baseline classifier** based on nearby track multiplicity
+- a simple **baseline classifier** based solely on nearby track multiplicity
 - a **physics-motivated isolation classifier**
 - three **machine-learning models**:
   - feed-forward neural network
@@ -27,7 +27,7 @@ Classifier performance is evaluated using:
 - **AUC**
 - **jet fake rate** at fixed photon efficiencies of **80%, 90%, and 95%**
 
-The main result of the project is that **track-based information provides strong photon–jet discrimination**, and that a simple **isolation-based classifier** outperforms the tested machine-learning models while also remaining straightforward, interpretable, and computationally inexpensive relative to full track reconstruction.
+The main result of the project is that **track-based information provides strong photon–jet discrimination**, and that a simple **isolation-based classifier** outperforms the tested machine-learning models while also remaining computationally inexpensive relative to full track reconstruction.
 
 ---
 
@@ -35,12 +35,13 @@ The main result of the project is that **track-based information provides strong
 
 ```text
 .
-├── baseline_classifier/
-├── isolation_cut_classifier/
-├── nn_classifier/
-├── treehgb_classifier/
-├── xgboost_classifier/
+├── models/
+│   ├── baseline_classifier/
+│   ├── isolation_cut_classifier/
+│   ├── nn_classifier/
+│   ├── treehgb_classifier/
+│   └── xgboost_classifier/
 ├── extra_analysis/
 ├── final_outputs/
-├── report/
+├── .gitignore
 └── README.md
