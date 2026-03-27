@@ -1,0 +1,25 @@
+# raw dataset (large, not for submission)
+initial_data/
+
+# cached intermediate data (rebuildable)
+cache/
+*.npz
+
+# python cache / compiled files
+__pycache__/
+*.py[cod]
+
+# model files (large, not needed for submission)
+*.keras
+*.h5
+*.hdf5
+
+# logs
+*.log
+
+# notebook checkpoints
+.ipynb_checkpoints/
+
+# OS junk
+.DS_Store
+Thumbs.db

@@ -1,0 +1,44 @@
+Permutation-based feature-ranking study for the three main classifiers.
+Seed: 42
+Run tag: single_run
+Data directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\10k_ev
+Output directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\final_outputs\feature_ranking\single_run
+Cache file: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\cache\dataset_feature_ranking_iso0p2_pt0p75_exclconv.npz
+n_events requested: 10000
+Converted photons: excluded
+Working points: 80, 90, 95
+Primary NN working point: 95
+Number of features after drops: 38
+
+Dropped features:
+none
+
+Base validation AUC used for permutation:
+XGBoost: 0.9081081356662996
+HistGradientBoosting: 0.9089004978280848
+Neural network: 0.9051511956700243
+
+Timing summary [s]:
+dataset load total: 0.085
+dataset build total: 0.000
+dataset build io total: 0.000
+dataset build feature total: 0.000
+XGBoost training: 8.865
+XGBoost permutation: 5.074
+HistGradientBoosting training: 7.357
+HistGradientBoosting permutation: 27.116
+Neural network training: 51.378
+Neural network permutation: 26.570
+total wall time: 129.537
+
+Saved outputs:
+combined_feature_importances_permutation_auc_all_models.csv
+combined_feature_importances_top10.png
+feature_importance_summary.csv
+timing_summary.csv
+xgboost_classifier/feature_importances_permutation_auc_all.csv
+xgboost_classifier/feature_importances_permutation_top15.png
+treeHGB_classifier/feature_importances_permutation_auc_all.csv
+treeHGB_classifier/feature_importances_permutation_top15.png
+nn_classifier/feature_importances_permutation_auc_all.csv
+nn_classifier/feature_importances_permutation_top15.png

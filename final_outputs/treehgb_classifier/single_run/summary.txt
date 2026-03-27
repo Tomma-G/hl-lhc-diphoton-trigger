@@ -1,0 +1,88 @@
+This run uses a tree model.
+Experiment: treehgb_classifier
+Model: HistGradientBoostingClassifier
+Seed: 42
+Run tag: single_run
+Data directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\10k_ev
+Output directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\final_outputs\treehgb_classifier\single_run
+Cache file: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\cache\dataset_treeHGB_iso0p2_pt0p75_exclconv.npz
+n_events requested: 10000
+Converted photons: excluded
+Feature set:
+obj_pt
+obj_eta
+obj_phi
+obj_e
+sum_pt
+n_tracks
+pt1_over_ptobj
+pt2_over_ptobj
+dr1
+dr2
+ntrk_r0_0p05
+sumpt_r0_0p05
+ntrk_r0p05_0p10
+sumpt_r0p05_0p10
+ntrk_r0p10_0p20
+sumpt_r0p10_0p20
+ntrk_r0p20_iso
+sumpt_r0p20_iso
+max_pt
+mean_dr
+ptw_mean_dr
+top2_sumpt_frac
+n_tracks_core
+sum_pt_core
+iso_ratio
+core_iso_ratio
+maxpt_over_objpt
+core_frac
+mean_abs_d0
+max_abs_d0
+ptw_mean_abs_d0
+mean_abs_z0
+max_abs_z0
+ptw_mean_abs_z0
+mean_d0_sig
+max_d0_sig
+mean_z0_sig
+max_z0_sig
+
+Val AUC: 0.906949667137737
+Test AUC: 0.9041147187775925
+
+Saved outputs:
+scores_val.csv
+scores_test.csv
+roc_val.csv
+roc_test.csv
+fake_vs_acceptance_val.png
+fake_vs_acceptance_test.png
+engineered_dataset.csv
+fixed_tpr_metrics.csv
+
+Val fake@80: 0.1335819080813812
+Test fake@80: 0.13849413946096284
+Val threshold at 80% TPR: 0.33233821946474
+Test threshold at 80% TPR: 0.31730623606260305
+
+Val fake@90: 0.1601685985247629
+Test fake@90: 0.16515462552148863
+Val threshold at 90% TPR: 0.1865264366841145
+Test threshold at 90% TPR: 0.1688073349875867
+
+Val fake@95: 0.220231822971549
+Test fake@95: 0.21720415866498907
+Val threshold at 95% TPR: 0.05208414524366556
+Test threshold at 95% TPR: 0.0535772201612789
+
+Timing summary:
+Loaded from cache: True
+Dataset load/build total [s]: 0.24250740000570659
+Dataset build io total [s]: 0.0
+Dataset build feature total [s]: 0.0
+Drop-feature time [s]: 4.00003045797348e-07
+Model build time [s]: 3.970000398112461e-05
+Training time [s]: 8.582755099996575
+Validation inference time [s]: 0.7225940999996965
+Test inference time [s]: 0.9165216000037617

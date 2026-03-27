@@ -1,0 +1,2 @@
+auc,best_cut,best_photon_eff,best_jet_fake,best_balanced_accuracy,cut_at_80_tpr,fake_at_80_tpr,achieved_tpr_at_80,cut_at_90_tpr,fake_at_90_tpr,achieved_tpr_at_90,cut_at_95_tpr,fake_at_95_tpr,achieved_tpr_at_95,dr,trk_pt_min,converted_photons
+0.7126166266860743,5,0.7921750529393969,0.47352008731354917,0.6593274828129239,6.0,0.5899121667273011,0.8856509024906726,7.0,0.6883997713216569,0.9424221034587072,8.0,0.7671638688217868,0.9733790460824846,0.2,0.75,excluded

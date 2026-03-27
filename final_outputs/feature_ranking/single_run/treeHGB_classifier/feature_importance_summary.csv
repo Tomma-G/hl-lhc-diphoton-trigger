@@ -1,0 +1,2 @@
+model,base_val_auc_for_permutation,n_features
+HistGradientBoosting,0.9089004978280848,38

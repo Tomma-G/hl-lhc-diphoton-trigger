@@ -1,0 +1,2 @@
+model,base_val_auc_for_permutation,n_features
+XGBoost,0.9081081356662996,38

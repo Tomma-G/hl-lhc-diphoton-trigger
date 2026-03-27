@@ -1,0 +1,91 @@
+This run uses a neural network.
+Experiment: nn_classifier
+Seed: 42
+Run tag: single_run
+Data directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\10k_ev
+Output directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\final_outputs\nn_classifier\single_run
+Cache file: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\cache\dataset_NN_iso0p2_pt0p75_exclconv.npz
+n_events requested: 10000
+Converted photons: excluded
+Class weights: None
+Feature set:
+obj_pt
+obj_eta
+obj_phi
+obj_e
+sum_pt
+n_tracks
+pt1_over_ptobj
+pt2_over_ptobj
+dr1
+dr2
+ntrk_r0_0p05
+sumpt_r0_0p05
+ntrk_r0p05_0p10
+sumpt_r0p05_0p10
+ntrk_r0p10_0p20
+sumpt_r0p10_0p20
+ntrk_r0p20_iso
+sumpt_r0p20_iso
+max_pt
+mean_dr
+ptw_mean_dr
+top2_sumpt_frac
+n_tracks_core
+sum_pt_core
+iso_ratio
+core_iso_ratio
+maxpt_over_objpt
+core_frac
+mean_abs_d0
+max_abs_d0
+ptw_mean_abs_d0
+mean_abs_z0
+max_abs_z0
+ptw_mean_abs_z0
+mean_d0_sig
+max_d0_sig
+mean_z0_sig
+max_z0_sig
+
+Val AUC: 0.9049129808715884
+Test AUC: 0.9026260480213156
+
+Saved outputs:
+train_validation_loss.png
+train_validation_accuracy.png
+scores_val.csv
+scores_test.csv
+roc_val.csv
+roc_test.csv
+fake_vs_acceptance_val.png
+fake_vs_acceptance_test.png
+engineered_dataset.csv
+fixed_tpr_metrics.csv
+
+Val fake@80: 0.13641890248844937
+Test fake@80: 0.14502350837692868
+Val threshold at 80% TPR: 0.39414517879486083
+Test threshold at 80% TPR: 0.37777964472770686
+
+Val fake@90: 0.17038177839020832
+Test fake@90: 0.17876961790609894
+Val threshold at 90% TPR: 0.2079785645008087
+Test threshold at 90% TPR: 0.17216083705425256
+
+Val fake@95: 0.22144767771743537
+Test fake@95: 0.22304483146811466
+Val threshold at 95% TPR: 0.05723373368382454
+Test threshold at 95% TPR: 0.05666155442595484
+
+Timing summary:
+Loaded from cache: True
+Dataset load/build total [s]: 0.3831932000030065
+Dataset build io total [s]: 0.0
+Dataset build feature total [s]: 0.0
+Drop-feature time [s]: 5.999972927384079e-07
+Scaling time [s]: 0.06180179999500979
+Model build time [s]: 2.0785510999994585
+Training time [s]: 70.79879489999439
+Validation inference time [s]: 0.6064282000006642
+Test inference time [s]: 0.7068273999975645

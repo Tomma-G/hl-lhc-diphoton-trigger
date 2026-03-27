@@ -1,0 +1,2 @@
+events_attempted,events_used,photons_scored,jets_scored,objects_scored,io_time_total_s,counting_time_total_s,postproc_time_total_s,total_wall_time_s,io_time_per_used_event_s,counting_time_per_used_event_s,counting_time_per_object_s,total_wall_time_per_used_event_s,dr,trk_pt_min,n_events_requested,converted_photons
+10000,9999,9917,76964,86881,295.72030559978884,6.385806799567945,0.9544069000039599,303.1856912000003,0.029574988058784762,0.0006386445444112356,7.350061347783686e-05,0.030321601280128042,0.2,0.75,10000,excluded

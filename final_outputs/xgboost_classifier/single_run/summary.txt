@@ -1,0 +1,103 @@
+This run uses an XGBoost model.
+Experiment: xgboost_classifier
+Model: XGBClassifier
+Seed: 42
+Run tag: single_run
+Data directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\initial_data\10k_ev
+Output directory: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\final_outputs\xgboost_classifier\single_run
+Cache file: C:\Users\Tom Greenwood\Desktop\University\Year 4\SEM 2\SH Project\cache\dataset_xgboost_iso0p2_pt0p75_exclconv.npz
+n_events requested: 10000
+Converted photons: excluded
+Feature set:
+obj_pt
+obj_eta
+obj_phi
+obj_e
+sum_pt
+n_tracks
+pt1_over_ptobj
+pt2_over_ptobj
+dr1
+dr2
+ntrk_r0_0p05
+sumpt_r0_0p05
+ntrk_r0p05_0p10
+sumpt_r0p05_0p10
+ntrk_r0p10_0p20
+sumpt_r0p10_0p20
+ntrk_r0p20_iso
+sumpt_r0p20_iso
+max_pt
+mean_dr
+ptw_mean_dr
+top2_sumpt_frac
+n_tracks_core
+sum_pt_core
+iso_ratio
+core_iso_ratio
+maxpt_over_objpt
+core_frac
+mean_abs_d0
+max_abs_d0
+ptw_mean_abs_d0
+mean_abs_z0
+max_abs_z0
+ptw_mean_abs_z0
+mean_d0_sig
+max_d0_sig
+mean_z0_sig
+max_z0_sig
+
+Model hyperparameters:
+n_estimators: 500
+learning_rate: 0.05
+max_depth: 6
+min_child_weight: 5
+subsample: 0.8
+colsample_bytree: 0.8
+tree_method: hist
+
+Val AUC: 0.9066561983611563
+Test AUC: 0.9045606480286048
+Permutation-importance base validation AUC: 0.9066561983611563
+
+Saved outputs:
+scores_val.csv
+scores_test.csv
+roc_val.csv
+roc_test.csv
+fake_vs_acceptance_val.png
+fake_vs_acceptance_test.png
+engineered_dataset.csv
+feature_importances_gain.csv
+feature_importances_top15.png
+feature_importances_permutation_auc.csv
+feature_importances_permutation_top15.png
+fixed_tpr_metrics.csv
+
+Val fake@80: 0.13341979411526303
+Test fake@80: 0.13886497582941526
+Val threshold at 80% TPR: 0.31730433702468874
+Test threshold at 80% TPR: 0.30844430128733313
+
+Val fake@90: 0.1609953797519657
+Test fake@90: 0.16745910866830013
+Val threshold at 90% TPR: 0.1851764321327206
+Test threshold at 90% TPR: 0.1642691045999526
+
+Val fake@95: 0.21634108778471264
+Test fake@95: 0.21852857426660485
+Val threshold at 95% TPR: 0.055664855241775515
+Test threshold at 95% TPR: 0.05739840343594551
+
+Timing summary:
+Loaded from cache: True
+Dataset load/build total [s]: 0.1005587999970885
+Dataset build io total [s]: 0.0
+Dataset build feature total [s]: 0.0
+Drop-feature time [s]: 5.00003807246685e-07
+Model build time [s]: 0.0001322999960393645
+Training time [s]: 9.431867599996622
+Validation inference time [s]: 0.16453380000166362
+Test inference time [s]: 0.15761829999973997
+Permutation importance time [s]: 5.569494700001087
